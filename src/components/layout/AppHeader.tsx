@@ -63,9 +63,9 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
   return (
     <header
       style={{ viewTransitionName: "app-header" }}
-      className="pt-safe z-40 shrink-0 bg-surface/90 backdrop-blur-xl"
+      className="pt-safe z-40 shrink-0 bg-surface/90 backdrop-blur-xl lg:border-b lg:border-surface-high"
     >
-      <div className="flex h-14 items-center gap-2 px-2">
+      <div className="mx-auto flex h-14 w-full items-center gap-2 px-2 lg:h-16 lg:max-w-[900px] lg:px-4">
         {backHref ? (
           <button
             type="button"
@@ -76,9 +76,9 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
             <ArrowLeft size={22} />
           </button>
         ) : (
-          <BrandMark className="ml-2 h-8 w-8 rounded-lg" />
+          <BrandMark className="ml-2 h-8 w-8 rounded-lg lg:hidden" />
         )}
-        <h1 className="min-w-0 flex-1 truncate px-1 text-[17px] font-semibold tracking-tight">{title}</h1>
+        <h1 className="min-w-0 flex-1 truncate px-1 text-[17px] font-semibold tracking-tight lg:text-xl">{title}</h1>
         {offline && (
           <span className="chip bg-error-container text-error" title="Sin conexión">
             <CloudOff size={12} /> Offline

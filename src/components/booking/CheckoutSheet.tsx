@@ -30,11 +30,11 @@ export function CheckoutSheet({ open, onClose, amount, description, onApproved, 
     if (open) setProcessing(false);
   }, [open]);
 
-  const pay = async (simulateReject = false) => {
+  const pay = async () => {
     setProcessing(true);
     const result = await requestDepositPayment({
       appointmentRef: description,
-      amount: simulateReject ? 0 : amount,
+      amount,
       description,
       method,
     });
@@ -124,11 +124,6 @@ export function CheckoutSheet({ open, onClose, amount, description, onApproved, 
         <p className="flex items-center gap-1.5 text-xs text-secondary">
           <ShieldCheck size={15} className="text-primary" aria-hidden /> Se descuenta del total del servicio.
         </p>
-        {onRejected && method === "mercadopago" && (
-          <button type="button" disabled={processing} onClick={() => pay(true)} className="self-start text-xs text-secondary underline underline-offset-2">
-            Simular pago rechazado (demo)
-          </button>
-        )}
       </div>
     </Sheet>
   );

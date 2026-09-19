@@ -24,7 +24,7 @@ export function BottomNav({ items }: { items: NavItem[] }) {
     <nav
       aria-label="Navegación principal"
       style={{ viewTransitionName: "app-nav" }}
-      className="pb-safe z-40 shrink-0 border-t border-surface-high bg-surface-lowest/95 backdrop-blur-xl"
+      className="pb-safe z-40 shrink-0 border-t border-surface-high bg-surface-lowest/95 backdrop-blur-xl lg:hidden"
     >
       <ul className="flex h-16 items-stretch justify-around px-2">
         {items.map(({ href, label, icon: Icon, badge, match = [] }) => {

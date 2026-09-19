@@ -1,6 +1,6 @@
 # D.S Studio Barbería · WebApp PWA (MVP)
 
-App mobile-first para reservar turnos con **seña fija del 50%**, gestionar la agenda de los barberos, cobrar en el sillón y vender productos que se retiran durante el corte. Tiene backend propio con base SQLite, así que los datos se comparten entre todos los dispositivos.
+App mobile-first y responsive para reservar turnos con **seña fija del 50%**, gestionar la agenda de los barberos, cobrar en el sillón y vender productos que se retiran durante el corte. Tiene backend propio con base SQLite, así que los datos se comparten entre todos los dispositivos.
 
 ## Stack
 
@@ -11,6 +11,7 @@ App mobile-first para reservar turnos con **seña fija del 50%**, gestionar la a
 - **Zustand** como caché del cliente, con actualizaciones optimistas y sincronización con el servidor cada 10 s
 - **React Hook Form + Zod**, **Lucide React**
 - **PWA**: `public/manifest.json` y un service worker propio (la API nunca se cachea)
+- **Layout responsive**: hasta 1023 px es la columna mobile con barra inferior; desde 1024 px (`lg`) pasa a escritorio — navegación lateral, contenido centrado y las hojas se muestran como diálogos centrados
 
 ## Arranque
 
@@ -20,14 +21,13 @@ npm run dev                  # http://localhost:3000
 npm run build && npm start   # producción
 ```
 
-La base se crea y se siembra sola la primera vez. Para empezar de cero, borrá la carpeta `data/`, o usá **Configuración → Señas → Restablecer datos demo**.
+La base se crea y se siembra sola la primera vez. Para empezar de cero, borrá la carpeta `data/`.
 
 | Variable | Uso |
 |---|---|
 | `DATABASE_PATH` | Ruta del archivo SQLite (por defecto `./data/ds-studio.db`) |
-| `NEXT_PUBLIC_DEMO_MODE` | `0` oculta los accesos rápidos a las cuentas demo en el login |
 
-### Cuentas demo
+### Cuentas sembradas
 
 | Rol | Usuario | PIN |
 |---|---|---|

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { useClientAppointments } from "@/components/appointments/useClientAppointments";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AppShell } from "@/components/layout/AppShell";
-import { BottomNav, type NavItem } from "@/components/layout/BottomNav";
+import type { NavItem } from "@/components/layout/BottomNav";
 import { RoleGuard } from "@/components/layout/RoleGuard";
 
 function routeMeta(pathname: string): { title: string; backHref?: string } {
@@ -35,7 +35,7 @@ function ClientFrame({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <AppShell header={<AppHeader title={meta.title} backHref={meta.backHref} />} nav={<BottomNav items={items} />}>
+    <AppShell header={<AppHeader title={meta.title} backHref={meta.backHref} />} items={items}>
       {children}
     </AppShell>
   );

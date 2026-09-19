@@ -29,7 +29,7 @@ export function RoleGuard({ role, children }: { role: Role; children: ReactNode 
 
   if (!hydrated || session?.role !== role) {
     return (
-      <div className="mx-auto h-dvh max-w-[480px] bg-surface">
+      <div className="mx-auto h-dvh max-w-[480px] bg-surface lg:max-w-none">
         <SkeletonList />
       </div>
     );
@@ -39,7 +39,7 @@ export function RoleGuard({ role, children }: { role: Role; children: ReactNode 
 
 export function ScreenLoader() {
   return (
-    <div className="mx-auto h-dvh max-w-[480px] bg-surface">
+    <div className="mx-auto h-dvh max-w-[480px] bg-surface lg:max-w-none">
       <SkeletonList />
     </div>
   );

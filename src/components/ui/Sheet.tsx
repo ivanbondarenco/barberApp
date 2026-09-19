@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { ease, spring } from "@/lib/motion";
+import { useIsDesktop } from "@/lib/useMediaQuery";
 
 interface SheetProps {
   open: boolean;
@@ -19,8 +20,9 @@ interface SheetProps {
 }
 
 /**
- * Bottom sheet táctil: entra con spring, se cierra arrastrando hacia abajo, con Escape,
- * tocando el fondo o con el botón "atrás" del teléfono.
+ * Mobile: bottom sheet táctil que entra con spring y se cierra arrastrando hacia abajo.
+ * Escritorio (≥1024px): diálogo centrado. En ambos cierra con Escape, tocando el fondo
+ * o con el botón "atrás" del teléfono.
  */
 export function Sheet({ open, onClose, title, subtitle, children, footer, className }: SheetProps) {
   const [mounted, setMounted] = useState(false);
@@ -45,6 +47,7 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dragControls = useDragControls();
+  const isDesktop = useIsDesktop();
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -78,7 +81,7 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-center">
+    <div className="fixed inset-0 z-[60] flex justify-center lg:items-center lg:p-6">
       <m.div
         className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
         initial={{ opacity: 0 }}
@@ -93,30 +96,32 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        initial={{ y: "100%" }}
-        animate={{ y: 0, transition: spring.sheet }}
-        exit={{ y: "100%", transition: { duration: 0.2, ease: ease.exit } }}
-        drag="y"
+        initial={isDesktop ? { opacity: 0, scale: 0.94, y: 12 } : { y: "100%" }}
+        animate={isDesktop ? { opacity: 1, scale: 1, y: 0, transition: spring.pop } : { y: 0, transition: spring.sheet }}
+        exit={isDesktop ? { opacity: 0, scale: 0.97, transition: { duration: 0.15, ease: ease.exit } } : { y: "100%", transition: { duration: 0.2, ease: ease.exit } }}
+        drag={isDesktop ? false : "y"}
         dragListener={false}
         dragControls={dragControls}
         dragConstraints={{ top: 0, bottom: 0 }}
         dragElastic={{ top: 0.04, bottom: 0.6 }}
         onDragEnd={onDragEnd}
         className={cn(
-          "pb-safe absolute bottom-0 flex max-h-[90dvh] w-full max-w-[480px] flex-col rounded-t-3xl bg-surface-lowest shadow-md outline-none",
+          "pb-safe absolute bottom-0 flex max-h-[90dvh] w-full max-w-[480px] flex-col rounded-t-3xl bg-surface-lowest shadow-md outline-none lg:static lg:max-h-[85dvh] lg:max-w-[560px] lg:rounded-3xl",
           className,
         )}
       >
         <div
-          className="flex cursor-grab touch-none justify-center pb-1 pt-2.5 active:cursor-grabbing"
+          className="flex cursor-grab touch-none justify-center pb-1 pt-2.5 active:cursor-grabbing lg:hidden"
           onPointerDown={(e) => dragControls.start(e)}
           aria-hidden
         >
           <span className="h-1.5 w-10 rounded-full bg-surface-highest" />
         </div>
         <header
-          className="flex touch-none items-start justify-between gap-3 px-5 pb-3"
-          onPointerDown={(e) => dragControls.start(e)}
+          className="flex touch-none items-start justify-between gap-3 px-5 pb-3 lg:pt-5"
+          onPointerDown={(e) => {
+            if (!isDesktop) dragControls.start(e);
+          }}
         >
           <div className="min-w-0 pt-1">
             <h2 id={titleId} className="text-lg font-bold leading-tight tracking-tight text-ink">

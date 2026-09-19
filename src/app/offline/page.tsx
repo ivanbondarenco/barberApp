@@ -5,7 +5,7 @@ export const metadata = { title: "Sin conexión" };
 
 export default function OfflinePage() {
   return (
-    <div className="mx-auto flex h-dvh max-w-[480px] flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
+    <div className="mx-auto flex h-dvh max-w-[480px] flex-col items-center justify-center gap-4 bg-surface px-6 text-center lg:max-w-none">
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-fixed text-primary">
         <WifiOff size={26} />
       </span>

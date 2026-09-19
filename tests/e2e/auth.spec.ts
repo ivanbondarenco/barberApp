@@ -161,15 +161,3 @@ test.describe("Registro, código y recuperación", () => {
     expect(res.ok()).toBeTruthy();
   });
 });
-
-test("los accesos demo ingresan con un toque", async ({ page }) => {
-  await page.goto("/auth/login");
-  await page.getByRole("button", { name: "Barbero demo" }).click();
-  await page.waitForURL("**/admin/agenda");
-  await page.getByRole("button", { name: "Abrir menú de cuenta" }).click();
-  await page.getByRole("button", { name: "Cerrar sesión" }).click();
-  await page.waitForURL("**/auth/login");
-  await page.getByRole("button", { name: "Cliente demo" }).click();
-  await page.waitForURL("**/cliente/reservar");
-  await expect(page.getByText("Hola, Tomás")).toBeVisible();
-});

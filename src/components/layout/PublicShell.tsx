@@ -28,7 +28,7 @@ export function PublicShell({ title, fallbackHref = "/auth/login", children, foo
   };
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-surface shadow-md">
+    <div className="mx-auto flex h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-surface shadow-md lg:my-8 lg:h-[calc(100dvh-4rem)] lg:max-w-[720px] lg:rounded-3xl">
       <header style={{ viewTransitionName: "app-header" }} className="pt-safe z-40 shrink-0 bg-surface/90 backdrop-blur-xl">
         <div className="flex h-14 items-center gap-1 px-2">
           <button type="button" onClick={back} aria-label="Volver" className="icon-btn">

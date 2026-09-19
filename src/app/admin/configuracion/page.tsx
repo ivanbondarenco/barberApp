@@ -3,21 +3,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
 import { Page } from "@/components/motion/Page";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
-import { Section } from "@/components/ui/States";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { minutesToTime } from "@/lib/dates";
 import { ease } from "@/lib/motion";
-import { resetDemo, updateBusinessInfo, updateHours } from "@/store/actions";
+import { updateBusinessInfo, updateHours } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 
 type Tab = "negocio" | "horarios" | "senas";
@@ -55,7 +52,7 @@ export default function ConfiguracionPage() {
         <m.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: ease.enter } }} exit={{ opacity: 0, transition: { duration: 0.1 } }} className="flex flex-col gap-4">
           {tab === "negocio" && <BusinessForm />}
           {tab === "horarios" && <HoursEditor />}
-          {tab === "senas" && <DepositsAndDemo />}
+          {tab === "senas" && <DepositRulesPanel />}
         </m.div>
       </AnimatePresence>
     </Page>
@@ -146,28 +143,5 @@ function HoursEditor() {
         );
       })}
     </ul>
-  );
-}
-
-function DepositsAndDemo() {
-  const [confirmReset, setConfirmReset] = useState(false);
-  return (
-    <>
-      <DepositRulesPanel />
-      <Section title="Datos de prueba">
-        <button type="button" onClick={() => setConfirmReset(true)} className="tap btn-secondary">
-          <RefreshCw size={16} /> Restablecer datos demo
-        </button>
-      </Section>
-      <ConfirmDialog
-        open={confirmReset}
-        onClose={() => setConfirmReset(false)}
-        destructive
-        title="¿Restablecer todo?"
-        description="Se reemplazan turnos, clientes, catálogo, horarios y cierres por los datos de ejemplo. Afecta a todos los dispositivos."
-        confirmLabel="Restablecer"
-        onConfirm={() => void resetDemo()}
-      />
-    </>
   );
 }

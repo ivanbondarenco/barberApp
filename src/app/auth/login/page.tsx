@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ArrowRight, Eye, EyeOff, MessageSquareText, Sparkles } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, MessageSquareText } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -14,7 +14,6 @@ import { homeFor } from "@/components/layout/RoleGuard";
 import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
-import { DEMO_ADMIN, DEMO_CLIENT, DEMO_OTP, DEMO_PIN } from "@/lib/mock-data";
 import { fadeUp } from "@/lib/motion";
 import type { Role } from "@/lib/types";
 import { useAppStore, useHydrated } from "@/store/useAppStore";
@@ -25,9 +24,6 @@ const schema = z.object({
   pin: z.string().regex(/^\d{4}$/, "El PIN tiene 4 dígitos"),
 });
 type Values = z.infer<typeof schema>;
-
-/** Accesos rápidos a las cuentas demo (desactivar con NEXT_PUBLIC_DEMO_MODE=0). */
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE !== "0";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -64,128 +60,99 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-[480px] flex-col bg-surface px-6 pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),16px)] shadow-md">
-      <main className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto py-4">
-        <m.div variants={fadeUp} initial="hidden" animate="show" className="mb-8 flex flex-col items-center text-center">
-          <LogoSeal className="h-20 w-20 drop-shadow-md" />
-          <h1 className="mt-4 text-2xl font-bold tracking-tight">D.S Studio</h1>
-          <p className="text-[15px] text-secondary">Reservá tu turno en segundos</p>
-        </m.div>
+    <div className="flex min-h-dvh w-full justify-center lg:items-center lg:p-8">
+      <div className="flex h-dvh w-full max-w-[480px] flex-col bg-surface px-6 pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),16px)] shadow-md lg:h-auto lg:max-w-[520px] lg:rounded-3xl lg:px-10 lg:py-10">
+        <main className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto py-4">
+          <m.div variants={fadeUp} initial="hidden" animate="show" className="mb-8 flex flex-col items-center text-center">
+            <LogoSeal className="h-20 w-20 drop-shadow-md" />
+            <h1 className="mt-4 text-2xl font-bold tracking-tight">D.S Studio</h1>
+            <p className="text-[15px] text-secondary">Reservá tu turno en segundos</p>
+          </m.div>
 
-        <Segmented
-          label="Tipo de cuenta"
-          value={role}
-          onChange={(r) => {
-            setRole(r);
-            setServerError(null);
-          }}
-          options={[
-            { value: "cliente", label: "Soy cliente" },
-            { value: "admin", label: "Soy barbero" },
-          ]}
-          className="mb-5"
-        />
+          <Segmented
+            label="Tipo de cuenta"
+            value={role}
+            onChange={(r) => {
+              setRole(r);
+              setServerError(null);
+            }}
+            options={[
+              { value: "cliente", label: "Soy cliente" },
+              { value: "admin", label: "Soy barbero" },
+            ]}
+            className="mb-5"
+          />
 
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
-          <Field label={role === "admin" ? "Email" : "Celular o email"} htmlFor="identifier" error={errors.identifier?.message}>
-            <input
-              id="identifier"
-              className="field py-3"
-              inputMode={role === "admin" ? "email" : "tel"}
-              autoComplete="username"
-              placeholder={role === "admin" ? "admin@dsstudio.com.ar" : "+54 9 11 …"}
-              {...register("identifier")}
-            />
-          </Field>
-          <Field label="PIN" htmlFor="pin" error={errors.pin?.message}>
-            <div className="relative">
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+            <Field label={role === "admin" ? "Email" : "Celular o email"} htmlFor="identifier" error={errors.identifier?.message}>
               <input
-                id="pin"
-                type={showPin ? "text" : "password"}
-                inputMode="numeric"
-                autoComplete="current-password"
-                maxLength={4}
-                placeholder="••••"
-                className="field py-3 pr-12 tracking-[0.35em]"
-                {...register("pin")}
+                id="identifier"
+                className="field py-3"
+                inputMode={role === "admin" ? "email" : "tel"}
+                autoComplete="username"
+                placeholder={role === "admin" ? "admin@dsstudio.com.ar" : "+54 9 11 …"}
+                {...register("identifier")}
               />
-              <button type="button" onClick={() => setShowPin((v) => !v)} aria-label={showPin ? "Ocultar PIN" : "Mostrar PIN"} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-muted">
-                {showPin ? <EyeOff size={19} /> : <Eye size={19} />}
-              </button>
-            </div>
-          </Field>
-
-          <AnimatePresence>
-            {serverError && (
-              <m.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden rounded-xl bg-error-container px-3 py-2 text-sm text-error" role="alert">
-                {serverError}
-              </m.p>
-            )}
-          </AnimatePresence>
-
-          <button type="submit" disabled={isSubmitting} className="tap btn-primary mt-1 py-3.5 text-[15px]">
-            {isSubmitting ? "Ingresando…" : "Ingresar"} {!isSubmitting && <ArrowRight size={18} />}
-          </button>
-        </form>
-
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <Link href="/auth/recuperar" className="inline-flex min-h-10 items-center font-medium text-secondary">
-            Olvidé mi PIN
-          </Link>
-          {role === "cliente" && (
-            <button type="button" onClick={() => setOtpOpen(true)} className="text-link">
-              <MessageSquareText size={16} /> Entrar con código
-            </button>
-          )}
-        </div>
-
-        {DEMO_MODE && (
-          <div className="mt-5 rounded-2xl bg-surface-lowest p-3 shadow-xs">
-            <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary">
-              <Sparkles size={15} className="text-primary" aria-hidden /> ¿Querés probar la app?
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {(
-                [
-                  { role: "cliente", label: "Cliente demo", identifier: DEMO_CLIENT.phone },
-                  { role: "admin", label: "Barbero demo", identifier: DEMO_ADMIN.identifier },
-                ] as const
-              ).map((demo) => (
-                <button
-                  key={demo.role}
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={async () => {
-                    setServerError(null);
-                    const result = await login(demo.role, demo.identifier, DEMO_PIN);
-                    if (!result.ok) return setServerError(result.error);
-                    router.replace(homeFor(demo.role));
-                  }}
-                  className="tap btn-secondary min-h-11 py-2 text-[13px]"
-                >
-                  {demo.label}
+            </Field>
+            <Field label="PIN" htmlFor="pin" error={errors.pin?.message}>
+              <div className="relative">
+                <input
+                  id="pin"
+                  type={showPin ? "text" : "password"}
+                  inputMode="numeric"
+                  autoComplete="current-password"
+                  maxLength={4}
+                  placeholder="••••"
+                  className="field py-3 pr-12 tracking-[0.35em]"
+                  {...register("pin")}
+                />
+                <button type="button" onClick={() => setShowPin((v) => !v)} aria-label={showPin ? "Ocultar PIN" : "Mostrar PIN"} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-muted">
+                  {showPin ? <EyeOff size={19} /> : <Eye size={19} />}
                 </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </main>
+              </div>
+            </Field>
 
-      <footer className="flex flex-col items-center gap-1 text-center text-sm">
-        {role === "cliente" && (
-          <p className="text-secondary">
-            ¿Primera vez?{" "}
-            <Link href="/auth/registro" className="text-link">
-              Crear cuenta
+            <AnimatePresence>
+              {serverError && (
+                <m.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden rounded-xl bg-error-container px-3 py-2 text-sm text-error" role="alert">
+                  {serverError}
+                </m.p>
+              )}
+            </AnimatePresence>
+
+            <button type="submit" disabled={isSubmitting} className="tap btn-primary mt-1 py-3.5 text-[15px]">
+              {isSubmitting ? "Ingresando…" : "Ingresar"} {!isSubmitting && <ArrowRight size={18} />}
+            </button>
+          </form>
+
+          <div className="mt-4 flex items-center justify-between text-sm">
+            <Link href="/auth/recuperar" className="inline-flex min-h-10 items-center font-medium text-secondary">
+              Olvidé mi PIN
             </Link>
-          </p>
-        )}
-        <Link href="/politicas" className="inline-flex min-h-10 items-center text-xs text-muted underline-offset-2 hover:underline">
-          Políticas de seña y cancelación
-        </Link>
-      </footer>
+            {role === "cliente" && (
+              <button type="button" onClick={() => setOtpOpen(true)} className="text-link">
+                <MessageSquareText size={16} /> Entrar con código
+              </button>
+            )}
+          </div>
+        </main>
 
-      <OtpSheet open={otpOpen} onClose={() => setOtpOpen(false)} onDone={() => router.replace("/cliente/reservar")} />
+        <footer className="flex flex-col items-center gap-1 text-center text-sm">
+          {role === "cliente" && (
+            <p className="text-secondary">
+              ¿Primera vez?{" "}
+              <Link href="/auth/registro" className="text-link">
+                Crear cuenta
+              </Link>
+            </p>
+          )}
+          <Link href="/politicas" className="inline-flex min-h-10 items-center text-xs text-muted underline-offset-2 hover:underline">
+            Políticas de seña y cancelación
+          </Link>
+        </footer>
+
+        <OtpSheet open={otpOpen} onClose={() => setOtpOpen(false)} onDone={() => router.replace("/cliente/reservar")} />
+      </div>
     </div>
   );
 }
@@ -214,7 +181,7 @@ function OtpSheet({ open, onClose, onDone }: { open: boolean; onClose: () => voi
     if (!result.ok) return setError(result.error);
     if (!sent) {
       setSent(true);
-      toast(`Te enviamos un código por WhatsApp (demo: ${DEMO_OTP})`, "info");
+      toast("Te enviamos un código por WhatsApp", "info");
       return;
     }
     onClose();

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AppShell } from "@/components/layout/AppShell";
-import { BottomNav, type NavItem } from "@/components/layout/BottomNav";
+import type { NavItem } from "@/components/layout/BottomNav";
 import { RoleGuard } from "@/components/layout/RoleGuard";
 
 function routeMeta(pathname: string): { title: string; backHref?: string } {
@@ -36,7 +36,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const meta = routeMeta(pathname);
   return (
     <RoleGuard role="admin">
-      <AppShell header={<AppHeader title={meta.title} backHref={meta.backHref} />} nav={<BottomNav items={NAV} />}>
+      <AppShell header={<AppHeader title={meta.title} backHref={meta.backHref} />} items={NAV}>
         {children}
       </AppShell>
     </RoleGuard>

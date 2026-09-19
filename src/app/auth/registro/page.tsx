@@ -10,7 +10,6 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { Field } from "@/components/ui/Field";
-import { DEMO_OTP } from "@/lib/mock-data";
 import { stepSlide } from "@/lib/motion";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
@@ -89,7 +88,7 @@ export default function RegistroPage() {
               id="register-form"
               onSubmit={handleSubmit((v) => {
                 setData(v);
-                toast(`Te enviamos un código por WhatsApp (demo: ${DEMO_OTP})`, "info");
+                toast("Te enviamos un código por WhatsApp", "info");
               })}
               noValidate
               className="flex flex-col gap-4"
@@ -145,7 +144,7 @@ export default function RegistroPage() {
                 <button type="button" onClick={() => setData(null)} className="font-medium text-secondary">
                   Corregir datos
                 </button>
-                <button type="button" onClick={() => toast(`Código reenviado (demo: ${DEMO_OTP})`, "info")} className="font-semibold text-primary">
+                <button type="button" onClick={() => toast("Código reenviado", "info")} className="font-semibold text-primary">
                   Reenviar
                 </button>
               </div>

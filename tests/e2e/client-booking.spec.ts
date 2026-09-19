@@ -64,22 +64,6 @@ test("reserva con seña en efectivo y luego la paga online", async ({ page }) =>
   await page.waitForURL(/cliente\/pago\/exito/);
 });
 
-test("un pago rechazado no reserva y permite reintentar con el servicio elegido", async ({ page }) => {
-  const before = (await pageState(page)).state.appointments.length;
-  await chooseService(page, /Combo Corte/);
-  await continueToConfirm(page);
-  await page.getByRole("button", { name: "Pagar seña" }).click();
-  await page.getByRole("button", { name: "Simular pago rechazado (demo)" }).click();
-
-  await page.waitForURL(/cliente\/pago\/error/);
-  await expect(page.getByRole("heading", { name: "El pago no se completó" })).toBeVisible();
-  expect((await pageState(page)).state.appointments.length).toBe(before);
-
-  await page.getByRole("link", { name: "Intentar de nuevo" }).click();
-  await expect(page.getByRole("heading", { name: "¿Cuándo venís?" })).toBeVisible();
-  await expect(page.getByText(/Combo Corte \+ Barba Clásica · 60 min/)).toBeVisible();
-});
-
 test("el asistente permite volver y cambiar de barbero", async ({ page }) => {
   await page.getByRole("button", { name: /Cambiar/ }).click();
   const sheet = page.getByRole("dialog", { name: "Elegí tu barbero" });

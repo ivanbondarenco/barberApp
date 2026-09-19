@@ -7,7 +7,6 @@ import { useState } from "react";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { SuccessCheck } from "@/components/motion/SuccessCheck";
 import { Field } from "@/components/ui/Field";
-import { DEMO_OTP } from "@/lib/mock-data";
 import { stepSlide } from "@/lib/motion";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
@@ -34,7 +33,7 @@ export default function RecuperarPage() {
           : await recover({ identifier, code, pin });
     setBusy(false);
     if (!result.ok) return setError(result.error);
-    if (step === 0) toast(`Código enviado (demo: ${DEMO_OTP})`, "info");
+    if (step === 0) toast("Código enviado", "info");
     setStep((s) => (s + 1) as Step);
   };
 
