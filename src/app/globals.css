@@ -1,0 +1,259 @@
+@import "tailwindcss";
+
+/*
+ * D.S Studio · Atelier Urbane design tokens
+ * Paleta oficial: blanco / pizarra suave, cobalto #1D4ED8, navy #101C36.
+ * Sin negro puro, sin dorados, sin degradados.
+ */
+@theme {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  --color-primary: #1d4ed8;
+  --color-primary-strong: #1e40af;
+  --color-primary-bright: #2563eb;
+  --color-primary-fixed: #dce1ff;
+  --color-on-primary: #ffffff;
+
+  --color-ink: #101c36;
+  --color-ink-soft: #213145;
+  --color-secondary: #545f73;
+  --color-muted: #62636c;
+  --color-outline: #c6c6ce;
+
+  --color-surface: #f8f9ff;
+  --color-surface-lowest: #ffffff;
+  --color-surface-low: #f0f3ff;
+  --color-surface-container: #e5eeff;
+  --color-surface-high: #dce9ff;
+  --color-surface-highest: #d3e4fe;
+
+  --color-mint: #e3f7ee;
+  --color-mint-ink: #0f7a55;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+
+  --shadow-xs: 0 0 0 1px rgb(16 28 54 / 0.05), 0 1px 2px rgb(16 28 54 / 0.05);
+  --shadow-sm: 0 0 0 1px rgb(16 28 54 / 0.05), 0 2px 6px rgb(16 28 54 / 0.06);
+  --shadow-md: 0 4px 12px rgb(16 28 54 / 0.08);
+  --shadow-bar: 0 1px 8px rgb(16 28 54 / 0.05);
+  --shadow-bar-up: 0 -1px 8px rgb(16 28 54 / 0.05);
+  --shadow-cta: 0 6px 18px -4px rgb(29 78 216 / 0.45);
+
+  --text-caps: 11px;
+  --text-caps--line-height: 16px;
+  --text-caps--letter-spacing: 0.08em;
+  --text-caps--font-weight: 700;
+
+  --animate-sheet-up: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade-in: fade-in 180ms ease-out;
+  --animate-toast-in: toast-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  @keyframes sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    background: var(--color-surface-container);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  ::selection {
+    background: var(--color-primary-fixed);
+    color: var(--color-primary);
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@utility tap {
+  transition: transform 120ms ease;
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl bg-surface-lowest shadow-sm;
+  }
+  .label-caps {
+    @apply text-caps uppercase text-secondary;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary shadow-cta transition-colors hover:bg-primary-strong disabled:bg-surface-highest disabled:text-secondary disabled:shadow-none;
+  }
+  .btn-secondary {
+    @apply inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-2xl bg-surface-low px-4 py-3 text-sm font-semibold text-ink transition-colors hover:bg-surface-high;
+  }
+  .btn-destructive {
+    @apply inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-2xl bg-surface-low px-4 py-3 text-sm font-semibold text-error transition-colors hover:bg-error-container;
+  }
+  .btn-destructive-solid {
+    @apply inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-error px-4 py-3 text-sm font-semibold text-on-primary transition-colors;
+  }
+  .field {
+    @apply min-h-12 w-full rounded-2xl border border-surface-highest bg-surface-lowest px-3.5 py-2.5 text-base text-ink outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface-lowest focus:ring-1 focus:ring-primary sm:text-sm;
+  }
+  .field-error {
+    @apply mt-1 text-xs font-medium text-error;
+  }
+}
+
+/* ───────── Motion (Material 3 tokens) ───────── */
+:root {
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --duration-exit: 150ms;
+  --duration-enter: 220ms;
+  --duration-move: 360ms;
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, var(--color-surface-low) 0%, var(--color-surface-container) 50%, var(--color-surface-low) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease-standard) infinite;
+  border-radius: 0.75rem;
+}
+
+@keyframes shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+@layer components {
+  .page-title {
+    @apply text-[22px] font-bold leading-tight tracking-tight text-ink;
+  }
+  .section-title {
+    @apply text-[13px] font-semibold uppercase tracking-wide text-secondary;
+  }
+  .row {
+    @apply flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left;
+  }
+  .icon-btn {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink transition-colors hover:bg-surface-low active:bg-surface-container;
+  }
+  .text-link {
+    @apply inline-flex min-h-10 items-center gap-1.5 font-semibold text-primary;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold;
+  }
+}
+
+/* ───────── View Transitions (navegación) ───────── */
+::view-transition {
+  pointer-events: none;
+}
+
+::view-transition-group(app-header),
+::view-transition-group(app-nav) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(app-header),
+::view-transition-old(app-nav) {
+  display: none;
+}
+::view-transition-new(app-header),
+::view-transition-new(app-nav) {
+  animation: none;
+}
+
+::view-transition-old(.nav-forward) {
+  --slide-offset: -48px;
+  animation:
+    var(--duration-exit) var(--ease-exit) both vt-fade reverse,
+    var(--duration-move) var(--ease-standard) both vt-slide reverse;
+}
+::view-transition-new(.nav-forward) {
+  --slide-offset: 48px;
+  animation:
+    var(--duration-enter) var(--ease-enter) var(--duration-exit) both vt-fade,
+    var(--duration-move) var(--ease-standard) both vt-slide;
+}
+::view-transition-old(.nav-back) {
+  --slide-offset: 48px;
+  animation:
+    var(--duration-exit) var(--ease-exit) both vt-fade reverse,
+    var(--duration-move) var(--ease-standard) both vt-slide reverse;
+}
+::view-transition-new(.nav-back) {
+  --slide-offset: -48px;
+  animation:
+    var(--duration-enter) var(--ease-enter) var(--duration-exit) both vt-fade,
+    var(--duration-move) var(--ease-standard) both vt-slide;
+}
+::view-transition-old(.nav-tab) {
+  animation: var(--duration-exit) var(--ease-exit) both vt-fade reverse;
+}
+::view-transition-new(.nav-tab) {
+  animation:
+    var(--duration-enter) var(--ease-enter) both vt-fade,
+    var(--duration-enter) var(--ease-enter) both vt-rise;
+}
+
+@keyframes vt-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes vt-slide {
+  from { translate: var(--slide-offset); }
+  to { translate: 0; }
+}
+@keyframes vt-rise {
+  from { translate: 0 8px; }
+  to { translate: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+  .skeleton {
+    animation: none;
+  }
+}
