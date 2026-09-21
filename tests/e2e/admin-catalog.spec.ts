@@ -65,14 +65,28 @@ test("productos: alta con stock, edición y baja", async ({ page }) => {
   expect((await pageState(page)).state.products.some((p) => p.name === "Cera Mate Viaje")).toBe(false);
 });
 
-test("reglas de seña: el 50% es fijo y el efectivo se puede desactivar", async ({ page }) => {
+test("reglas de seña: el dueño elige el porcentaje y puede desactivar el efectivo", async ({ page }) => {
   await page.getByRole("tab", { name: "Seña" }).click();
-  await expect(page.getByText("Seña fija del 50%")).toBeVisible();
+  const options = page.getByRole("radiogroup", { name: "Porcentaje de seña" });
+  await expect(options.getByRole("radio", { name: "50%" })).toHaveAttribute("aria-checked", "true");
+
   const cash = page.getByRole("switch", { name: "Seña en efectivo" });
   await cash.click();
   await expect(cash).toHaveAttribute("aria-checked", "false");
   await cash.click();
   await expect(cash).toHaveAttribute("aria-checked", "true");
+
+  // Cambiar el porcentaje se refleja en el precio de seña del catálogo.
+  await options.getByRole("radio", { name: "30%" }).click();
+  await expect(options.getByRole("radio", { name: "30%" })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await pageState(page)).state.depositSettings.rate).toBe(0.3);
+
+  // Sin seña desaparece la opción de efectivo: no hay nada que cobrar antes.
+  await options.getByRole("radio", { name: "Sin seña" }).click();
+  await expect(page.getByRole("switch", { name: "Seña en efectivo" })).toHaveCount(0);
+
+  await options.getByRole("radio", { name: "50%" }).click();
+  await expect.poll(async () => (await pageState(page)).state.depositSettings.rate).toBe(0.5);
 });
 
 test("los cambios del catálogo llegan al celular del cliente sin recargar", async ({ page, browser }) => {

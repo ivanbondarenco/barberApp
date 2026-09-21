@@ -57,7 +57,7 @@ export function ClientFormSheet({ open, client, onClose, onDeleted }: ClientForm
 
   const onSubmit = async (v: Values) => {
     const next: ClientProfile = {
-      ...(client ?? { notifications: { reminder24h: true, whatsapp: true, promos: false }, credit: 0, createdAt: new Date().toISOString() }),
+      ...(client ?? { notifications: { reminder24h: true, whatsapp: true }, credit: 0, createdAt: new Date().toISOString() }),
       id: client?.id ?? uid("c"),
       name: v.name,
       phone: v.phone,

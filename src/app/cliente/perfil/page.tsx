@@ -66,7 +66,6 @@ export default function PerfilPage() {
             [
               { key: "reminder24h", label: "Recordatorio 24 h antes" },
               { key: "whatsapp", label: "Confirmaciones por WhatsApp" },
-              { key: "promos", label: "Novedades de la tienda" },
             ] as const
           ).map((n) => (
             <label key={n.key} className="row cursor-pointer">

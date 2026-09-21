@@ -34,6 +34,23 @@ export const deleteAppointment = (id: string) => runWithFeedback({ type: "appoin
 export const registerDeposit = (id: string, method: PaymentMethod, success = "Seña registrada") =>
   runWithFeedback({ type: "appointment.deposit", id, method }, success);
 
+/** El cliente avisa que transfirió: queda en revisión hasta que el staff vea el comprobante. */
+export const declareTransfer = (id: string, reference?: string) =>
+  runWithFeedback({ type: "appointment.declareTransfer", id, reference }, "Aviso enviado. Lo confirmamos en un rato.");
+
+/** El staff no encontró la transferencia. */
+export const rejectDeposit = (id: string) =>
+  runWithFeedback({ type: "appointment.rejectDeposit", id }, "Transferencia rechazada");
+
+export const markNoShow = (id: string) =>
+  runWithFeedback({ type: "appointment.noShow", id }, "Marcado como ausente. La seña queda para el local.");
+
+/** El cliente califica un turno terminado. Una sola vez por turno. */
+export const rateAppointment = (id: string, rating: number) =>
+  runWithFeedback({ type: "appointment.rate", id, rating }, "¡Gracias por calificar!");
+
+export const markReminderSent = (id: string) => runWithFeedback({ type: "appointment.reminderSent", id });
+
 export const chargeAppointment = (id: string, method: PaymentMethod, success?: string) =>
   runWithFeedback({ type: "appointment.charge", id, method }, success);
 
@@ -89,6 +106,12 @@ export async function deleteBlock(block: TimeBlock) {
 export const setAllowCash = (allowCash: boolean) =>
   runWithFeedback({ type: "settings.deposit", allowCash }, allowCash ? "Seña en efectivo habilitada" : "Seña en efectivo deshabilitada");
 
+export const setDepositRate = (rate: number) =>
+  runWithFeedback(
+    { type: "settings.deposit", rate },
+    rate === 0 ? "Los turnos se reservan sin seña" : `Seña del ${Math.round(rate * 100)}%`,
+  );
+
 export const updateHours = (dayIndex: number, patch: Partial<DayHours>) => runWithFeedback({ type: "settings.hours", dayIndex, patch });
 
 export const updateBusinessInfo = (patch: Partial<BusinessInfo>) =>
@@ -98,6 +121,78 @@ export const openCash = () => runWithFeedback({ type: "cash.open" }, "Caja abier
 
 export const closeCash = (closure: Omit<CashClosure, "id" | "openedAt" | "closedAt">) =>
   runWithFeedback({ type: "cash.close", closure: { ...closure, id: uid("cc") } }, "Caja cerrada");
+
+// ───────── Pagos y cuentas (fuera del estado de dominio) ─────────
+
+/**
+ * Abre el checkout de Mercado Pago para la seña de un turno ya creado.
+ * Devuelve la URL a la que hay que navegar; la seña la acredita el webhook, no esta llamada.
+ */
+export async function startCheckout(appointmentId: string): Promise<Result & { initPoint?: string }> {
+  try {
+    const res = await fetch("/api/payments/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appointmentId }),
+      credentials: "same-origin",
+    });
+    const data = (await res.json().catch(() => ({}))) as { initPoint?: string; error?: string };
+    if (!res.ok || !data.initPoint) return { ok: false, error: data.error ?? "No pudimos abrir el pago" };
+    return { ok: true, initPoint: data.initPoint };
+  } catch {
+    return { ok: false, error: "Sin conexión. Revisá tu internet." };
+  }
+}
+
+async function post(url: string, body: unknown): Promise<Result> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) return { ok: false, error: data.error ?? "No se pudo guardar" };
+    await useAppStore.getState().refresh(true);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Sin conexión. Revisá tu internet." };
+  }
+}
+
+/** Alta, cambio de PIN o baja del acceso de un barbero. */
+export async function saveStaffAccount(input: { barberId: string; identifier: string; pin?: string }): Promise<Result> {
+  const result = await post("/api/staff/account", input);
+  if (!result.ok) toast(result.error, "error");
+  else toast(input.identifier ? "Acceso del barbero actualizado" : "Acceso eliminado", "success");
+  return result;
+}
+
+/** Credenciales de Mercado Pago del local. */
+export async function savePaymentCredentials(input: {
+  accessToken?: string;
+  publicKey?: string;
+  webhookSecret?: string;
+}): Promise<Result> {
+  const result = await post("/api/settings/payments", input);
+  if (!result.ok) toast(result.error, "error");
+  else toast("Credenciales guardadas", "success");
+  return result;
+}
+
+/** Credenciales de WhatsApp del local. */
+export async function saveWhatsappCredentials(input: {
+  accessToken?: string;
+  phoneNumberId?: string;
+  template?: string;
+  language?: string;
+}): Promise<Result> {
+  const result = await post("/api/settings/whatsapp", input);
+  if (!result.ok) toast(result.error, "error");
+  else toast("WhatsApp actualizado", "success");
+  return result;
+}
 
 export const resetDemo = () => runWithFeedback({ type: "demo.reset" }, "Datos demo restablecidos");
 

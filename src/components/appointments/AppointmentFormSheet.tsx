@@ -41,6 +41,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
   const [time, setTime] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [depositPaid, setDepositPaid] = useState(false);
+  const depositRate = useAppStore((s) => s.depositSettings.rate);
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -215,7 +216,9 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold">Seña ya recibida</p>
-                <p className="text-xs text-secondary">50% · {money(splitDeposit(service.price).deposit)}</p>
+                <p className="text-xs text-secondary">
+                  {Math.round(depositRate * 100)}% · {money(splitDeposit(service.price, depositRate).deposit)}
+                </p>
               </div>
               <Switch checked={depositPaid} onChange={setDepositPaid} label="Seña recibida" />
             </div>

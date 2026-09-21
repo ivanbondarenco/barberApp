@@ -10,6 +10,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { money, uid } from "@/lib/format";
 import { splitDeposit } from "@/lib/pricing";
+import { useAppStore } from "@/store/useAppStore";
 import type { Service } from "@/lib/types";
 import { deleteService, saveService } from "@/store/actions";
 
@@ -51,7 +52,8 @@ export function ServiceFormSheet({ open, service, onClose }: { open: boolean; se
   }, [open, service, reset]);
 
   const [price, featured, active] = useWatch({ control, name: ["price", "featured", "active"] });
-  const split = splitDeposit(Number(price) || 0);
+  const depositRate = useAppStore((s) => s.depositSettings.rate);
+  const split = splitDeposit(Number(price) || 0, depositRate);
 
   const onSubmit = async (v: Values) => {
     const next: Service = {

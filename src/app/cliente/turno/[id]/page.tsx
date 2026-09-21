@@ -2,12 +2,14 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { CalendarClock, CalendarPlus, ChevronDown, CircleX, MessageSquareText, Navigation, Package } from "lucide-react";
+import { CalendarClock, CalendarPlus, ChevronDown, CircleX, CreditCard, MessageSquareText, Navigation, Package } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { AppointmentTimeline } from "@/components/appointments/AppointmentTimeline";
+import { RateAppointment } from "@/components/appointments/RateAppointment";
 import { RescheduleSheet } from "@/components/appointments/RescheduleSheet";
+import { PayDepositSheet } from "@/components/booking/PayDepositSheet";
 import { StatusChip } from "@/components/appointments/StatusChip";
 import { NAV, Page } from "@/components/motion/Page";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -31,6 +33,7 @@ export default function ClienteTurnoPage() {
 
   const [rescheduling, setRescheduling] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
 
   if (!appointment) {
@@ -53,6 +56,9 @@ export default function ClienteTurnoPage() {
   const active = appointment.status === "confirmado";
   const inWindow = hoursUntil(appointment.date, appointment.time) >= FREE_CANCELLATION_HOURS;
   const depositPaid = appointment.deposit.status === "abonada";
+  const underReview = appointment.deposit.status === "en_revision";
+  // La seña en efectivo se paga en el local; las demás se pueden saldar desde acá.
+  const canPayOnline = active && !depositPaid && !underReview && appointment.deposit.method !== "efectivo";
 
   return (
     <Page className="gap-4 px-5 pb-6 pt-2">
@@ -76,8 +82,12 @@ export default function ClienteTurnoPage() {
           <span className="flex-1 text-[15px]">Seña 50%</span>
           <span className="text-right">
             <span className="block text-[15px] font-semibold tabular-nums">{money(t.deposit)}</span>
-            <span className={cn("block text-xs", depositPaid ? "text-mint-ink" : "text-secondary")}>
-              {depositPaid ? `Abonada · ${paymentMethodLabel[appointment.deposit.method]}` : "Pendiente"}
+            <span className={cn("block text-xs", depositPaid ? "text-mint-ink" : underReview ? "text-amber-ink" : "text-secondary")}>
+              {depositPaid
+                ? `Abonada · ${paymentMethodLabel[appointment.deposit.method]}`
+                : underReview
+                  ? "Estamos confirmando tu transferencia"
+                  : "Pendiente"}
             </span>
           </span>
         </div>
@@ -97,6 +107,12 @@ export default function ClienteTurnoPage() {
           </span>
         </div>
       </div>
+
+      {canPayOnline && (
+        <button type="button" onClick={() => setPaying(true)} className="tap btn-primary">
+          <CreditCard size={17} /> Pagar seña {money(t.deposit)}
+        </button>
+      )}
 
       {active && (
         <>
@@ -119,6 +135,8 @@ export default function ClienteTurnoPage() {
           </div>
         </>
       )}
+
+      {appointment.status === "completado" && <RateAppointment appointment={appointment} barberName={barber?.name} />}
 
       {!active && (
         <Link
@@ -151,6 +169,8 @@ export default function ClienteTurnoPage() {
           )}
         </AnimatePresence>
       </div>
+
+      <PayDepositSheet appointment={appointment} open={paying} onClose={() => setPaying(false)} />
 
       <RescheduleSheet appointment={rescheduling ? appointment : null} onClose={() => setRescheduling(false)} />
       <ConfirmDialog

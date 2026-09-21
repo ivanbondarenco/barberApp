@@ -9,6 +9,7 @@ import { Field } from "@/components/ui/Field";
 import { Section } from "@/components/ui/States";
 import { cn } from "@/lib/cn";
 import { dayNumber, dayShort, longDate, monthShort, todayISO } from "@/lib/dates";
+import { firstOpenDay } from "@/lib/schedule";
 import { daySummary } from "@/lib/finance";
 import { money } from "@/lib/format";
 import { listItem, spring } from "@/lib/motion";
@@ -19,7 +20,10 @@ export default function CierrePage() {
   const appointments = useAppStore((s) => s.appointments);
   const cashRegister = useAppStore((s) => s.cashRegister);
   const closures = useAppStore((s) => s.cashClosures);
-  const today = todayISO();
+  const hours = useAppStore((s) => s.businessHours);
+  // El mismo día que muestran la agenda y finanzas: si hoy el local está cerrado, el próximo
+  // día abierto. Cerrar la caja de un día que no existe no tendría sentido.
+  const today = useMemo(() => firstOpenDay(todayISO(), hours), [hours]);
   const summary = useMemo(() => daySummary(appointments, today), [appointments, today]);
 
   const [counted, setCounted] = useState("");

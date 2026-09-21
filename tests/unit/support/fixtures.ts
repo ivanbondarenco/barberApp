@@ -19,9 +19,15 @@ export const TUESDAY = "2026-09-15";
 export const WEDNESDAY = "2026-09-16";
 export const THURSDAY = "2026-09-17";
 
-export const admin: Actor = { role: "admin" };
-export const demoClient: Actor = { role: "cliente", clientId: "c-demo" };
-export const otherClient: Actor = { role: "cliente", clientId: "c-mateo" };
+/** Barbería de la demo: todos los actores de los tests operan dentro de ella. */
+export const SHOP = "s-default";
+
+export const admin: Actor = { role: "admin", shopId: SHOP };
+export const barberNico: Actor = { role: "barbero", shopId: SHOP, barberId: "b-nico" };
+export const barberOther: Actor = { role: "barbero", shopId: SHOP, barberId: "b-diego" };
+export const system: Actor = { role: "sistema", shopId: SHOP };
+export const demoClient: Actor = { role: "cliente", shopId: SHOP, clientId: "c-demo" };
+export const otherClient: Actor = { role: "cliente", shopId: SHOP, clientId: "c-mateo" };
 
 export function freezeTime(date = MONDAY_9AM) {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -38,10 +44,11 @@ export function seedState(): DomainState {
     appointments: buildSeedAppointments(),
     blocks: buildSeedBlocks(),
     cashClosures: buildSeedClosures(),
-    depositSettings: { allowCash: true },
+    depositSettings: { allowCash: true, rate: 0.5 },
     cashRegister: { open: true, openedAt: "08:30" },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
+    integrations: { mercadopagoReady: true, whatsappReady: true },
   });
 }
 

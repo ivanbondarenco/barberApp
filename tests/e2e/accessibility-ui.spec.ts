@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { expectAccessible, expectNoHorizontalOverflow, loginAsAdmin, loginAsClient, resetData } from "./helpers";
+import { expectAccessible, expectNoHorizontalOverflow, loginAsAdmin, loginAsClient, openShop, resetData } from "./helpers";
 
 test.beforeAll(resetData);
 
-const PUBLIC_PAGES = ["/auth/login", "/auth/registro", "/auth/recuperar", "/politicas", "/ayuda", "/offline"];
+const PUBLIC_PAGES = ["/auth/login", "/auth/registro", "/auth/recuperar", "/auth/nueva-barberia", "/politicas", "/ayuda", "/offline"];
 const CLIENT_PAGES = ["/cliente/reservar", "/cliente/mis-turnos", "/cliente/turno/a-demo-client", "/cliente/tienda", "/cliente/perfil", "/cliente/historial"];
 const ADMIN_PAGES = [
   "/admin/agenda",
@@ -16,11 +16,13 @@ const ADMIN_PAGES = [
   "/admin/clientes/c-demo",
   "/admin/equipo",
   "/admin/configuracion",
+  "/admin/recordatorios",
 ];
 
 test.describe("Accesibilidad WCAG 2.1 AA y layout mobile", () => {
   for (const path of PUBLIC_PAGES) {
     test(`pública ${path}`, async ({ page }) => {
+      await openShop(page);
       await page.goto(path);
       await expectAccessible(page);
       await expectNoHorizontalOverflow(page);

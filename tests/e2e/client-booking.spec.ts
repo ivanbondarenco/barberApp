@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { loginAsClient, pageState, pickFirstSlot, resetData } from "./helpers";
+import { adminApi, loginAsClient, pageState, pickFirstSlot, resetData, runCommand } from "./helpers";
 
 test.beforeAll(resetData);
 test.beforeEach(async ({ page }) => loginAsClient(page));
@@ -22,7 +22,7 @@ async function continueToConfirm(page: Page) {
   return time;
 }
 
-test("reserva pagando la seña online y ve el turno confirmado", async ({ page }) => {
+test("reserva avisando una transferencia: queda en revisión hasta que el local la confirme", async ({ page }) => {
   await chooseService(page, /Corte Clásico Tijera/);
   await expect(page.getByText("$4.750")).toBeVisible(); // seña 50% de $9.500
   const time = await continueToConfirm(page);
@@ -31,22 +31,53 @@ test("reserva pagando la seña online y ve el turno confirmado", async ({ page }
   await page.getByRole("button", { name: "Pagar seña" }).click();
   const checkout = page.getByRole("dialog", { name: "Pagar seña" });
   await expect(checkout.getByText("$4.750", { exact: true })).toBeVisible();
-  await checkout.getByRole("button", { name: /con Mercado Pago/ }).click();
+  await checkout.getByRole("button", { name: /Reservar y transferir/ }).click();
 
-  await page.waitForURL(/cliente\/pago\/exito\?turno=/);
-  await expect(page.getByRole("heading", { name: "¡Listo, te esperamos!" })).toBeVisible();
+  await page.waitForURL(/cliente\/pago\/pendiente\?turno=/);
+  const id = new URL(page.url()).searchParams.get("turno")!;
   await expect(page.getByText(`${time} hs`)).toBeVisible();
 
-  const id = new URL(page.url()).searchParams.get("turno")!;
-  const appointment = (await pageState(page)).state.appointments.find((a) => a.id === id);
-  expect(appointment).toMatchObject({ status: "confirmado", deposit: { status: "abonada", method: "mercadopago" } });
+  // El turno existe, pero la seña NO está abonada: el navegador no puede acreditarla.
+  let appointment = (await pageState(page)).state.appointments.find((a) => a.id === id);
+  expect(appointment).toMatchObject({ status: "confirmado", deposit: { status: "pendiente", method: "transferencia" } });
+
+  // El cliente avisa que transfirió: pasa a revisión, que todavía no es plata.
+  await page.getByRole("button", { name: "Ver datos y avisar" }).click();
+  await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /Ya transferí/ }).click();
+  await expect.poll(async () => (await pageState(page)).state.appointments.find((a) => a.id === id)?.deposit.status).toBe("en_revision");
 
   await page.getByRole("link", { name: "Ver mi turno" }).click();
   await page.waitForURL(`**/cliente/turno/${id}`);
-  await expect(page.getByText("Abonada · Mercado Pago")).toBeVisible();
+  await expect(page.getByText("Estamos confirmando tu transferencia")).toBeVisible();
+
+  // Recién el staff, con el comprobante a la vista, la acredita.
+  const api = await adminApi();
+  expect((await runCommand(api, { type: "appointment.deposit", id, method: "transferencia" })).status).toBe(200);
+  await api.dispose();
+
+  await page.reload();
+  await expect(page.getByText("Abonada · Transferencia")).toBeVisible();
+  appointment = (await pageState(page)).state.appointments.find((a) => a.id === id);
+  expect(appointment?.deposit.status).toBe("abonada");
 });
 
-test("reserva con seña en efectivo y luego la paga online", async ({ page }) => {
+test("el cliente no puede acreditarse la seña ni llamando a la API", async ({ page }) => {
+  await chooseService(page, /Corte Clásico Tijera/);
+  await continueToConfirm(page);
+  await page.getByRole("button", { name: "Pagar seña" }).click();
+  await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /Reservar y transferir/ }).click();
+  await page.waitForURL(/cliente\/pago\/pendiente\?turno=/);
+  const id = new URL(page.url()).searchParams.get("turno")!;
+
+  // Comando de staff enviado con la sesión del cliente: el servidor lo rechaza.
+  const res = await page.request.post("/api/commands", {
+    data: { command: { type: "appointment.deposit", id, method: "mercadopago" } },
+  });
+  expect(res.status()).toBe(403);
+  expect((await pageState(page)).state.appointments.find((a) => a.id === id)?.deposit.status).toBe("pendiente");
+});
+
+test("reserva con seña en efectivo y después avisa la transferencia", async ({ page }) => {
   await chooseService(page, /Barboterapia/);
   await chooseDay(page, 3);
   await continueToConfirm(page);
@@ -56,12 +87,13 @@ test("reserva con seña en efectivo y luego la paga online", async ({ page }) =>
   await page.getByRole("button", { name: "Reservar" }).click();
 
   await page.waitForURL(/cliente\/pago\/pendiente/);
+  const id = new URL(page.url()).searchParams.get("turno")!;
   await expect(page.getByRole("heading", { name: "Turno reservado" })).toBeVisible();
   await expect(page.getByText(/Aboná \$3\.750 en el local antes del/)).toBeVisible();
 
   await page.getByRole("button", { name: "Pagar online ahora" }).click();
-  await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /con Mercado Pago/ }).click();
-  await page.waitForURL(/cliente\/pago\/exito/);
+  await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /Ya transferí/ }).click();
+  await expect.poll(async () => (await pageState(page)).state.appointments.find((a) => a.id === id)?.deposit.status).toBe("en_revision");
 });
 
 test("el asistente permite volver y cambiar de barbero", async ({ page }) => {
@@ -101,9 +133,14 @@ test("cancela con anticipación, recibe crédito y lo usa como seña", async ({ 
   await chooseDay(page, 5);
   await continueToConfirm(page);
   await page.getByRole("button", { name: "Pagar seña" }).click();
-  await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /con Mercado Pago/ }).click();
-  await page.waitForURL(/cliente\/pago\/exito/);
+  await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /Reservar y transferir/ }).click();
+  await page.waitForURL(/cliente\/pago\/pendiente/);
   const id = new URL(page.url()).searchParams.get("turno")!;
+
+  // La seña la acredita el staff; solo entonces puede volver como crédito.
+  const api = await adminApi();
+  expect((await runCommand(api, { type: "appointment.deposit", id, method: "transferencia" })).status).toBe(200);
+  await api.dispose();
 
   await page.goto(`/cliente/turno/${id}`);
   await page.getByRole("button", { name: "Cancelar", exact: true }).click();

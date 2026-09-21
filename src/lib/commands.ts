@@ -4,7 +4,17 @@
  */
 import { fromISODate, hoursUntil, nowTime } from "./dates";
 import { initials, phoneKey } from "./format";
-import { CASH_DEPOSIT_DEADLINE_HOURS, FREE_CANCELLATION_HOURS, appointmentTotals, splitDeposit } from "./pricing";
+import {
+  CASH_DEPOSIT_DEADLINE_HOURS,
+  FREE_CANCELLATION_HOURS,
+  HOLD_MINUTES,
+  appointmentTotals,
+  isDepositPaid,
+  isValidDepositRate,
+  NO_SHOW_DEPOSIT_LIMIT,
+  noShowCount,
+  splitDeposit,
+} from "./pricing";
 import { buildSlots, cashDepositDeadline } from "./schedule";
 import type {
   Appointment,
@@ -17,6 +27,7 @@ import type {
   DayHours,
   DepositSettings,
   PaymentMethod,
+  IntegrationSettings,
   Product,
   Service,
   TimeBlock,
@@ -34,9 +45,23 @@ export interface DomainState {
   cashClosures: CashClosure[];
   businessHours: BusinessHours;
   businessInfo: BusinessInfo;
+  integrations: IntegrationSettings;
 }
 
-export type Actor = { role: "admin" } | { role: "cliente"; clientId: string };
+/**
+ * Quién ejecuta el comando.
+ * - `admin`: dueño del local, puede todo.
+ * - `barbero`: solo su propia agenda; no toca caja, catálogo, equipo ni configuración.
+ * - `cliente`: solo lo propio, y únicamente los comandos de `CLIENT_COMMANDS`.
+ * - `sistema`: webhook de la pasarela. Es el ÚNICO que puede acreditar un pago online.
+ */
+export type Actor =
+  | { role: "admin"; shopId: string }
+  | { role: "barbero"; shopId: string; barberId: string }
+  | { role: "cliente"; shopId: string; clientId: string }
+  | { role: "sistema"; shopId: string };
+
+const isStaffActor = (actor: Actor): boolean => actor.role === "admin" || actor.role === "barbero";
 
 export class DomainError extends Error {
   constructor(
@@ -60,7 +85,12 @@ export interface BookPayload {
   time: string;
   notes?: string;
   depositMethod: PaymentMethod;
-  depositPaid: boolean;
+  /**
+   * Solo staff: la seña ya se cobró en el mostrador al agendar.
+   * Para el cliente se ignora siempre — la acreditación la decide el servidor
+   * (webhook de la pasarela, staff con el comprobante a la vista, o crédito a favor).
+   */
+  depositPaid?: boolean;
 }
 
 export interface AppointmentPatch {
@@ -76,7 +106,12 @@ export type Command =
   | { type: "appointment.update"; id: string; patch: AppointmentPatch }
   | { type: "appointment.cancel"; id: string }
   | { type: "appointment.delete"; id: string }
-  | { type: "appointment.deposit"; id: string; method: PaymentMethod }
+  | { type: "appointment.deposit"; id: string; method: PaymentMethod; reference?: string }
+  | { type: "appointment.declareTransfer"; id: string; reference?: string }
+  | { type: "appointment.rejectDeposit"; id: string }
+  | { type: "appointment.noShow"; id: string }
+  | { type: "appointment.reminderSent"; id: string }
+  | { type: "appointment.rate"; id: string; rating: number }
   | { type: "appointment.charge"; id: string; method: PaymentMethod }
   | { type: "appointment.addProduct"; id: string; productId: string }
   | { type: "appointment.removeProduct"; id: string; productId: string }
@@ -91,16 +126,33 @@ export type Command =
   | { type: "client.delete"; id: string }
   | { type: "block.create"; block: TimeBlock }
   | { type: "block.delete"; id: string }
-  | { type: "settings.deposit"; allowCash: boolean }
+  | { type: "settings.deposit"; allowCash?: boolean; rate?: number }
   | { type: "settings.hours"; dayIndex: number; patch: Partial<DayHours> }
   | { type: "settings.info"; patch: Partial<BusinessInfo> }
   | { type: "cash.open" }
   | { type: "cash.close"; closure: Omit<CashClosure, "openedAt" | "closedAt"> }
   | { type: "demo.reset" };
 
-const ADMIN_ONLY = new Set<Command["type"]>([
-  "appointment.delete",
-  "appointment.charge",
+const fail = (message: string, status = 400): never => {
+  throw new DomainError(message, status);
+};
+
+/** Lo único que puede pedir un cliente. Todo lo demás se le niega por defecto. */
+const CLIENT_COMMANDS = new Set<Command["type"]>([
+  "appointment.book",
+  "appointment.update",
+  "appointment.cancel",
+  "appointment.declareTransfer",
+  // Califica el turno que ya le hicieron.
+  "appointment.rate",
+  // Arma su pedido de la tienda para retirar en el sillón, sobre su propio turno.
+  "appointment.addProduct",
+  "appointment.removeProduct",
+  "client.upsert",
+]);
+
+/** Reservado al dueño: plata del local, catálogo, equipo y configuración. */
+const OWNER_COMMANDS = new Set<Command["type"]>([
   "service.upsert",
   "service.delete",
   "product.upsert",
@@ -109,8 +161,6 @@ const ADMIN_ONLY = new Set<Command["type"]>([
   "barber.upsert",
   "barber.delete",
   "client.delete",
-  "block.create",
-  "block.delete",
   "settings.deposit",
   "settings.hours",
   "settings.info",
@@ -119,9 +169,21 @@ const ADMIN_ONLY = new Set<Command["type"]>([
   "demo.reset",
 ]);
 
-const fail = (message: string, status = 400): never => {
-  throw new DomainError(message, status);
-};
+/** El webhook de la pasarela solo acredita señas; no puede hacer nada más. */
+const SYSTEM_COMMANDS = new Set<Command["type"]>(["appointment.deposit"]);
+
+function assertAllowed(actor: Actor, type: Command["type"]) {
+  if (actor.role === "admin") return;
+  if (actor.role === "sistema") {
+    if (!SYSTEM_COMMANDS.has(type)) fail("Acción no permitida", 403);
+    return;
+  }
+  if (actor.role === "barbero") {
+    if (OWNER_COMMANDS.has(type)) fail("Acción reservada al dueño del local", 403);
+    return;
+  }
+  if (!CLIENT_COMMANDS.has(type)) fail("Acción reservada al staff", 403);
+}
 
 function replace<T extends { id: string }>(list: T[], item: T): T[] {
   return list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item];
@@ -130,7 +192,39 @@ function replace<T extends { id: string }>(list: T[], item: T): T[] {
 function ownAppointment(state: DomainState, actor: Actor, id: string): Appointment {
   const appointment = state.appointments.find((a) => a.id === id) ?? fail("El turno no existe", 404);
   if (actor.role === "cliente" && appointment.clientId !== actor.clientId) fail("No tenés permiso sobre este turno", 403);
+  if (actor.role === "barbero" && appointment.barberId !== actor.barberId)
+    fail("Ese turno es de otro barbero", 403);
   return appointment;
+}
+
+/** Un barbero solo agenda y bloquea sobre su propio sillón. */
+function assertOwnChair(actor: Actor, barberId: string) {
+  if (actor.role === "barbero" && barberId !== actor.barberId) fail("Solo podés operar sobre tu agenda", 403);
+}
+
+/**
+ * Libera las reservas digitales que vencieron sin acreditarse.
+ * Corre al principio de cada comando, así el horario se devuelve solo, sin cron ni barrido externo.
+ */
+export function releaseExpiredHolds(state: DomainState, now: Date): DomainState {
+  const stamp = now.toISOString();
+  const expired = state.appointments.filter(
+    (a) => a.status === "confirmado" && a.holdUntil !== undefined && a.holdUntil <= stamp,
+  );
+  if (!expired.length) return state;
+
+  let products = state.products;
+  for (const a of expired) products = restoreStock(products, a);
+  const ids = new Set(expired.map((a) => a.id));
+  return {
+    ...state,
+    products,
+    appointments: state.appointments.map((a) =>
+      ids.has(a.id)
+        ? { ...a, status: "cancelado" as const, products: [], cancelledAt: stamp, holdExpired: true, holdUntil: undefined }
+        : a,
+    ),
+  };
 }
 
 function assertSlot(
@@ -169,7 +263,8 @@ const isUpcoming = (a: Appointment, now: Date) =>
   a.status === "confirmado" && hoursUntil(a.date, a.time, now) * 60 + a.durationMin > 0;
 
 export function applyCommand(state: DomainState, command: Command, actor: Actor, now = new Date()): DomainState {
-  if (actor.role !== "admin" && ADMIN_ONLY.has(command.type)) fail("Acción reservada al staff", 403);
+  assertAllowed(actor, command.type);
+  state = releaseExpiredHolds(state, now);
   const stamp = now.toISOString();
 
   switch (command.type) {
@@ -178,32 +273,48 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       if (state.appointments.some((a) => a.id === p.id)) fail("Turno duplicado", 409);
       const service = state.services.find((s) => s.id === p.serviceId && s.active) ?? fail("El servicio no está disponible");
       const barber = state.barbers.find((b) => b.id === p.barberId && b.active) ?? fail("El barbero no está disponible");
-      const { deposit } = splitDeposit(service.price);
+      const { deposit } = splitDeposit(service.price, state.depositSettings.rate);
+
+      assertOwnChair(actor, barber.id);
 
       let clients = state.clients;
       let client: ClientProfile;
-      let depositPaid = p.depositPaid;
+      // El cliente nunca decide si pagó: arranca en `pendiente` salvo que el crédito lo cubra.
+      let depositPaid = false;
+      let holdUntil: string | undefined;
       const method = p.depositMethod;
 
       if (actor.role === "cliente") {
         client = clients.find((c) => c.id === actor.clientId) ?? fail("Perfil de cliente inexistente", 403);
-        if (method === "efectivo") {
+        if (deposit === 0) {
+          // El local no pide seña: no hay nada que acreditar ni horario que retener.
+          depositPaid = true;
+        } else if (method === "efectivo") {
           if (!state.depositSettings.allowCash) fail("El local no acepta seña en efectivo");
+          // Quien ya faltó sin avisar reserva pagando por adelantado: es la política publicada.
+          if (noShowCount(state.appointments, client.id) >= NO_SHOW_DEPOSIT_LIMIT)
+            fail("Por ausencias anteriores, este local te pide abonar la seña por adelantado");
           const deadline = cashDepositDeadline(p.date, p.time, state.businessHours, CASH_DEPOSIT_DEADLINE_HOURS);
           if (deadline.getTime() <= now.getTime()) fail("Ya pasó el plazo para la seña en efectivo");
-          depositPaid = false;
         } else if (method === "credito") {
+          // Único caso en que el turno nace pago: el crédito se verifica y se descuenta acá.
           if (client.credit < deposit) fail("Tu crédito no alcanza para cubrir la seña");
           depositPaid = true;
           clients = clients.map((c) => (c.id === client.id ? { ...c, credit: c.credit - deposit } : c));
-        } else if (!depositPaid) {
-          fail("La seña online debe estar abonada para confirmar");
+        } else {
+          if (method === "mercadopago" && !state.integrations.mercadopagoReady)
+            fail("El pago online no está disponible. Elegí otro medio.");
+          // Retiene el horario mientras paga; si no se acredita, se libera solo.
+          holdUntil = new Date(now.getTime() + HOLD_MINUTES * 60_000).toISOString();
         }
       } else {
         const name = p.clientName.trim();
         if (name.length < 2) fail("Ingresá el nombre del cliente");
         if (!validPhone(p.clientPhone)) fail("Teléfono inválido");
         if (method === "credito") fail("El crédito lo usa el cliente desde la app");
+        // El staff sí puede marcarla cobrada: tiene la plata o el comprobante delante.
+        // Con seña 0 no hay nada que cobrar, así que queda saldada sola.
+        depositPaid = deposit === 0 || p.depositPaid === true;
         const existing = clients.find((c) => phoneKey(c.phone) === phoneKey(p.clientPhone));
         if (existing) {
           client = existing;
@@ -212,7 +323,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
             id: p.newClientId ?? fail("Falta el id del cliente nuevo"),
             name,
             phone: p.clientPhone.trim(),
-            notifications: { reminder24h: true, whatsapp: true, promos: false },
+            notifications: { reminder24h: true, whatsapp: true },
             credit: 0,
             createdAt: stamp,
           };
@@ -244,6 +355,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         status: "confirmado",
         source: actor.role === "cliente" ? "app" : "manual",
         createdAt: stamp,
+        ...(holdUntil ? { holdUntil } : {}),
       };
       assertSlot(state, appointment, now);
       return { ...state, clients, appointments: [...state.appointments, appointment] };
@@ -262,6 +374,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         ? state.services.find((s) => s.id === patch.serviceId) ?? fail("Servicio inexistente")
         : undefined;
       if (patch.barberId && !state.barbers.some((b) => b.id === patch.barberId && b.active)) fail("Barbero no disponible");
+      if (patch.barberId) assertOwnChair(actor, patch.barberId);
 
       const next: Appointment = {
         ...current,
@@ -274,7 +387,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           : {}),
       };
       if (next.deposit.status === "pendiente") {
-        next.deposit = { ...next.deposit, amount: splitDeposit(next.servicePrice).deposit };
+        next.deposit = { ...next.deposit, amount: splitDeposit(next.servicePrice, state.depositSettings.rate).deposit };
       }
       const moved = next.date !== current.date || next.time !== current.time || next.barberId !== current.barberId;
       if (moved) assertSlot(state, next, now);
@@ -289,8 +402,10 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
     case "appointment.cancel": {
       const current = ownAppointment(state, actor, command.id);
       if (current.status !== "confirmado") fail("El turno ya no está activo");
-      const inWindow = actor.role === "admin" || hoursUntil(current.date, current.time, now) >= FREE_CANCELLATION_HOURS;
-      const credit = inWindow && current.deposit.status === "abonada" ? current.deposit.amount : 0;
+      // El staff puede cancelar sin cargo en cualquier momento; el cliente, hasta el plazo libre.
+      const inWindow = isStaffActor(actor) || hoursUntil(current.date, current.time, now) >= FREE_CANCELLATION_HOURS;
+      // Solo vuelve como crédito la plata efectivamente acreditada: `en_revision` no entró todavía.
+      const credit = inWindow && isDepositPaid(current.deposit) ? current.deposit.amount : 0;
       return {
         ...state,
         products: restoreStock(state.products, current),
@@ -303,6 +418,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           products: [],
           cancelledAt: stamp,
           creditIssued: credit || undefined,
+          holdUntil: undefined,
         }),
       };
     }
@@ -317,24 +433,117 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       };
     }
 
+    /**
+     * Acredita la seña. Inalcanzable para el cliente (no está en `CLIENT_COMMANDS`):
+     * la plata la confirma el webhook de la pasarela (`sistema`) o el staff con el comprobante.
+     */
     case "appointment.deposit": {
       const current = ownAppointment(state, actor, command.id);
       if (current.status !== "confirmado") fail("El turno no está activo");
-      if (current.deposit.status === "abonada") fail("La seña ya está abonada");
-      if (actor.role === "cliente" && command.method !== "mercadopago" && command.method !== "transferencia")
-        fail("Medio de pago no válido");
-      if (actor.role === "admin" && !state.cashRegister.open) fail("Abrí la caja para registrar cobros");
+      if (isDepositPaid(current.deposit)) fail("La seña ya está abonada");
+      // Cobro en mostrador: tiene que haber caja abierta. El webhook entra a cualquier hora.
+      if (isStaffActor(actor) && command.method === "efectivo" && !state.cashRegister.open)
+        fail("Abrí la caja para registrar cobros");
       return {
         ...state,
         appointments: replace(state.appointments, {
           ...current,
           deposit: {
-            amount: splitDeposit(current.servicePrice).deposit,
+            amount: splitDeposit(current.servicePrice, state.depositSettings.rate).deposit,
             method: command.method,
             status: "abonada",
             paidAt: stamp,
+            declaredAt: current.deposit.declaredAt,
+            reference: command.reference ?? current.deposit.reference,
           },
+          holdUntil: undefined,
         }),
+      };
+    }
+
+    /**
+     * El cliente avisa que transfirió. No acredita nada: deja la seña `en_revision`
+     * y mantiene el horario hasta que el staff vea el comprobante.
+     */
+    case "appointment.declareTransfer": {
+      const current = ownAppointment(state, actor, command.id);
+      if (current.status !== "confirmado") fail("El turno no está activo");
+      if (isDepositPaid(current.deposit)) fail("La seña ya está abonada");
+      if (current.deposit.status === "en_revision") fail("Ya avisaste de esta transferencia");
+      return {
+        ...state,
+        appointments: replace(state.appointments, {
+          ...current,
+          deposit: {
+            ...current.deposit,
+            amount: splitDeposit(current.servicePrice, state.depositSettings.rate).deposit,
+            method: "transferencia",
+            status: "en_revision",
+            declaredAt: stamp,
+            reference: cleanText(command.reference, 40),
+          },
+          holdUntil: undefined,
+        }),
+      };
+    }
+
+    /** El staff no encontró la transferencia: vuelve a pendiente y se reanuda el plazo. */
+    case "appointment.rejectDeposit": {
+      const current = ownAppointment(state, actor, command.id);
+      if (current.deposit.status !== "en_revision") fail("No hay una transferencia para revisar");
+      return {
+        ...state,
+        appointments: replace(state.appointments, {
+          ...current,
+          deposit: { ...current.deposit, status: "pendiente", declaredAt: undefined, reference: undefined },
+        }),
+      };
+    }
+
+    /**
+     * El cliente no se presentó. La seña queda para el local: no genera crédito.
+     * Para perdonar la ausencia, el staff cancela en vez de marcar ausente.
+     */
+    case "appointment.noShow": {
+      const current = ownAppointment(state, actor, command.id);
+      if (current.status !== "confirmado") fail("El turno no está activo");
+      if (hoursUntil(current.date, current.time, now) > 0) fail("El turno todavía no empezó");
+      const forfeited = isDepositPaid(current.deposit) ? current.deposit.amount : 0;
+      return {
+        ...state,
+        products: restoreStock(state.products, current),
+        appointments: replace(state.appointments, {
+          ...current,
+          status: "no_show",
+          products: [],
+          noShowAt: stamp,
+          depositForfeited: forfeited || undefined,
+          holdUntil: undefined,
+        }),
+      };
+    }
+
+    /** Reseña del cliente sobre un turno terminado. Es lo único que mueve el rating del barbero. */
+    case "appointment.rate": {
+      // Solo el cliente. Si el staff pudiera calificar, la barbería se pondría cinco estrellas
+      // sola y el número dejaría de significar algo para quien lo lee.
+      if (actor.role !== "cliente") fail("Solo el cliente puede calificar su turno", 403);
+      const current = ownAppointment(state, actor, command.id);
+      if (current.status !== "completado") fail("Solo podés calificar un turno que ya te hicieron");
+      if (current.rating) fail("Ya calificaste este turno");
+      if (!Number.isInteger(command.rating) || command.rating < 1 || command.rating > 5)
+        fail("La calificación va de 1 a 5");
+      return {
+        ...state,
+        appointments: replace(state.appointments, { ...current, rating: command.rating }),
+      };
+    }
+
+    case "appointment.reminderSent": {
+      const current = ownAppointment(state, actor, command.id);
+      return {
+        ...state,
+        appointments: replace(state.appointments, { ...current, reminderSentAt: stamp }),
       };
     }
 
@@ -343,16 +552,17 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       if (!state.cashRegister.open) fail("Abrí la caja para registrar cobros");
       if (current.status !== "confirmado") fail("El turno no está pendiente de cobro");
       const t = appointmentTotals(current);
-      const deposit =
-        current.deposit.status === "abonada"
-          ? current.deposit
-          : { amount: t.deposit, method: command.method, status: "abonada" as const, paidAt: stamp };
+      // Si la seña no se había acreditado (pendiente o en revisión), se cobra entera en el sillón.
+      const deposit = isDepositPaid(current.deposit)
+        ? current.deposit
+        : { amount: t.deposit, method: command.method, status: "abonada" as const, paidAt: stamp };
       return {
         ...state,
         appointments: replace(state.appointments, {
           ...current,
           status: "completado",
           deposit,
+          holdUntil: undefined,
           balancePayment: {
             amount: Math.max(0, current.servicePrice - deposit.amount) + t.products,
             method: command.method,
@@ -464,7 +674,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         email: cleanText(c.email, 80),
         preferences: cleanText(c.preferences, 160),
         notifications: c.notifications ?? base.notifications,
-        ...(actor.role === "admin" ? { internalNotes: cleanText(c.internalNotes, 240) } : {}),
+        ...(isStaffActor(actor) ? { internalNotes: cleanText(c.internalNotes, 240) } : {}),
       };
       const appointments = state.appointments.map((a) =>
         a.clientId === next.id ? { ...a, clientName: next.name, clientPhone: next.phone } : a,
@@ -486,14 +696,25 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       const b = command.block;
       if (b.end <= b.start) fail("La hora de fin debe ser posterior al inicio");
       if (!b.reason.trim()) fail("Indicá un motivo");
+      assertOwnChair(actor, b.barberId);
       return { ...state, blocks: replace(state.blocks, b) };
     }
 
-    case "block.delete":
+    case "block.delete": {
+      const block = state.blocks.find((b) => b.id === command.id);
+      if (block) assertOwnChair(actor, block.barberId);
       return { ...state, blocks: state.blocks.filter((b) => b.id !== command.id) };
+    }
 
-    case "settings.deposit":
-      return { ...state, depositSettings: { allowCash: command.allowCash } };
+    case "settings.deposit": {
+      const next = { ...state.depositSettings };
+      if (command.allowCash !== undefined) next.allowCash = command.allowCash;
+      if (command.rate !== undefined) {
+        if (!isValidDepositRate(command.rate)) fail("La seña tiene que estar entre 0% y 100%");
+        next.rate = command.rate;
+      }
+      return { ...state, depositSettings: next };
+    }
 
     case "settings.hours": {
       const day = state.businessHours[command.dayIndex] ?? fail("Día inválido");

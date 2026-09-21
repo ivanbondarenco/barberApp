@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
+import { ShopLinkCard } from "@/components/admin/ShopLinkCard";
 import { Page } from "@/components/motion/Page";
 import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
@@ -14,10 +15,11 @@ import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { minutesToTime } from "@/lib/dates";
 import { ease } from "@/lib/motion";
-import { updateBusinessInfo, updateHours } from "@/store/actions";
+import { savePaymentCredentials, saveWhatsappCredentials, updateBusinessInfo, updateHours } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
+import { toast } from "@/store/useToast";
 
-type Tab = "negocio" | "horarios" | "senas";
+type Tab = "negocio" | "horarios" | "senas" | "integraciones" | "cuenta";
 
 const DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -46,13 +48,28 @@ export default function ConfiguracionPage() {
           { value: "negocio", label: "Negocio" },
           { value: "horarios", label: "Horarios" },
           { value: "senas", label: "Señas" },
+          { value: "integraciones", label: "Conexiones" },
+          { value: "cuenta", label: "Cuenta" },
         ]}
       />
       <AnimatePresence mode="wait" initial={false}>
         <m.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: ease.enter } }} exit={{ opacity: 0, transition: { duration: 0.1 } }} className="flex flex-col gap-4">
-          {tab === "negocio" && <BusinessForm />}
+          {tab === "negocio" && (
+            <>
+              <ShopLinkCard />
+              <BusinessForm />
+            </>
+          )}
           {tab === "horarios" && <HoursEditor />}
           {tab === "senas" && <DepositRulesPanel />}
+          {tab === "integraciones" && (
+            <>
+              <PaymentsPanel />
+              <hr className="border-surface-high" />
+              <WhatsappPanel />
+            </>
+          )}
+          {tab === "cuenta" && <AccountPanel />}
         </m.div>
       </AnimatePresence>
     </Page>
@@ -143,5 +160,276 @@ function HoursEditor() {
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * Credenciales de Mercado Pago del local.
+ *
+ * Nunca se muestran completas: el servidor devuelve solo los últimos 4 caracteres para
+ * reconocerlas. Un campo vacío deja la credencial como está; para borrarla se usa el botón.
+ */
+function PaymentsPanel() {
+  const ready = useAppStore((s) => s.integrations.mercadopagoReady);
+  const [status, setStatus] = useState<PaymentStatus | null>(null);
+  const [values, setValues] = useState({ accessToken: "", publicKey: "", webhookSecret: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/settings/payments", { credentials: "same-origin", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: PaymentStatus | null) => d && setStatus(d))
+      .catch(() => undefined);
+  }, []);
+
+  const save = async () => {
+    // Solo se mandan los campos que el dueño realmente escribió.
+    const patch = Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim())) as Record<string, string>;
+    if (!Object.keys(patch).length) return;
+    setSaving(true);
+    const result = await savePaymentCredentials(patch);
+    setSaving(false);
+    if (!result.ok) return;
+    setValues({ accessToken: "", publicKey: "", webhookSecret: "" });
+    const refreshed = await fetch("/api/settings/payments", { credentials: "same-origin", cache: "no-store" });
+    if (refreshed.ok) setStatus((await refreshed.json()) as PaymentStatus);
+  };
+
+  const fields = [
+    { key: "accessToken" as const, label: "Access token de Mercado Pago", hint: "Credencial de producción", stored: status?.accessToken },
+    { key: "publicKey" as const, label: "Public key", hint: "Opcional", stored: status?.publicKey },
+    {
+      key: "webhookSecret" as const,
+      label: "Clave secreta del webhook",
+      hint: "La genera Mercado Pago al configurar la notificación",
+      stored: status?.webhookSecret,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="text-caps text-secondary">Mercado Pago</h2>
+      <div className={cn("rounded-2xl p-4", ready ? "bg-mint" : "bg-surface-lowest shadow-xs")}>
+        <p className={cn("text-[15px] font-semibold", ready && "text-mint-ink")}>
+          {ready ? "Cobro online activo" : "Cobro online sin configurar"}
+        </p>
+        <p className={cn("mt-1 text-[13px]", ready ? "text-mint-ink" : "text-secondary")}>
+          {ready
+            ? "Los clientes pueden pagar la seña con Mercado Pago."
+            : "Sin credenciales, la app ofrece solo transferencia y efectivo."}
+        </p>
+        {ready && status && !status.canReceiveWebhooks && (
+          <p className="mt-2 text-[13px] font-semibold text-error">
+            Falta la clave secreta del webhook: sin ella no se pueden acreditar los pagos automáticamente.
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {fields.map((f) => (
+          <Field key={f.key} label={f.label} htmlFor={`mp-${f.key}`}>
+            <input
+              id={`mp-${f.key}`}
+              type="password"
+              autoComplete="off"
+              className="field font-mono"
+              placeholder={f.stored || f.hint}
+              value={values[f.key]}
+              onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            />
+          </Field>
+        ))}
+      </div>
+
+      <p className="text-[13px] text-secondary">
+        En Mercado Pago configurá la notificación de pagos apuntando a <span className="font-mono">/api/payments/webhook</span> de
+        este sitio.
+      </p>
+
+      <button type="button" disabled={saving} onClick={() => void save()} className="tap btn-primary">
+        {saving ? "Guardando…" : "Guardar Mercado Pago"}
+      </button>
+    </div>
+  );
+}
+
+interface PaymentStatus {
+  accessToken: string;
+  publicKey: string;
+  webhookSecret: string;
+  ready: boolean;
+  canReceiveWebhooks: boolean;
+}
+
+/** Cambio del PIN de la cuenta del staff. */
+function AccountPanel() {
+  const session = useAppStore((s) => s.session);
+  const changePin = useAppStore((s) => s.changePin);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (current.length !== 4 || next.length !== 4) return toast("El PIN tiene 4 dígitos", "error");
+    setSaving(true);
+    const result = await changePin(current, next);
+    setSaving(false);
+    if (!result.ok) return toast(result.error, "error");
+    setCurrent("");
+    setNext("");
+    toast("PIN actualizado", "success");
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl bg-surface-lowest p-4 shadow-xs">
+        <p className="text-[13px] text-secondary">Sesión iniciada como</p>
+        <p className="text-[15px] font-semibold">{session?.name}</p>
+        <p className="text-[13px] text-secondary">{session?.identifier}</p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <Field label="PIN actual" htmlFor="pin-current">
+          <input
+            id="pin-current"
+            inputMode="numeric"
+            autoComplete="current-password"
+            maxLength={4}
+            className="field tracking-[0.5em]"
+            placeholder="••••"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          />
+        </Field>
+        <Field label="PIN nuevo" htmlFor="pin-next">
+          <input
+            id="pin-next"
+            inputMode="numeric"
+            autoComplete="new-password"
+            maxLength={4}
+            className="field tracking-[0.5em]"
+            placeholder="••••"
+            value={next}
+            onChange={(e) => setNext(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          />
+        </Field>
+      </div>
+
+      <button type="button" disabled={saving} onClick={() => void submit()} className="tap btn-primary">
+        {saving ? "Guardando…" : "Cambiar PIN"}
+      </button>
+    </div>
+  );
+}
+
+interface WhatsappStatus {
+  accessToken: string;
+  phoneNumberId: string;
+  template: string;
+  language: string;
+  ready: boolean;
+}
+
+/**
+ * Credenciales de WhatsApp Cloud API del local. Con esto la app manda los códigos de
+ * verificación del registro, del acceso por código y de la recuperación de PIN.
+ */
+function WhatsappPanel() {
+  const ready = useAppStore((s) => s.integrations.whatsappReady);
+  const [status, setStatus] = useState<WhatsappStatus | null>(null);
+  const [values, setValues] = useState({ accessToken: "", phoneNumberId: "", template: "", language: "" });
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    const res = await fetch("/api/settings/whatsapp", { credentials: "same-origin", cache: "no-store" });
+    if (res.ok) setStatus((await res.json()) as WhatsappStatus);
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  const save = async () => {
+    // Solo se manda lo que el dueño escribió: lo vacío deja la credencial como está.
+    const patch = Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim())) as Record<string, string>;
+    if (!Object.keys(patch).length) return;
+    setSaving(true);
+    const result = await saveWhatsappCredentials(patch);
+    setSaving(false);
+    if (!result.ok) return;
+    setValues({ accessToken: "", phoneNumberId: "", template: "", language: "" });
+    await load();
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="text-caps text-secondary">WhatsApp</h2>
+      <div className={cn("rounded-2xl p-4", ready ? "bg-mint" : "bg-surface-lowest shadow-xs")}>
+        <p className={cn("text-[15px] font-semibold", ready && "text-mint-ink")}>
+          {ready ? "WhatsApp conectado" : "WhatsApp sin configurar"}
+        </p>
+        <p className={cn("mt-1 text-[13px]", ready ? "text-mint-ink" : "text-secondary")}>
+          {ready
+            ? "Los códigos de verificación salen desde tu número."
+            : "Sin esto, tus clientes no pueden crear cuenta ni recuperar el PIN por su cuenta."}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <Field label="Access token de WhatsApp" htmlFor="wa-token">
+          <input
+            id="wa-token"
+            type="password"
+            autoComplete="off"
+            className="field font-mono"
+            placeholder={status?.accessToken || "Token permanente de tu app de Meta"}
+            value={values.accessToken}
+            onChange={(e) => setValues((v) => ({ ...v, accessToken: e.target.value }))}
+          />
+        </Field>
+        <Field label="Phone number ID" htmlFor="wa-phone">
+          <input
+            id="wa-phone"
+            inputMode="numeric"
+            autoComplete="off"
+            className="field font-mono"
+            placeholder={status?.phoneNumberId || "Id del número en WhatsApp Cloud API"}
+            value={values.phoneNumberId}
+            onChange={(e) => setValues((v) => ({ ...v, phoneNumberId: e.target.value }))}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Plantilla" htmlFor="wa-template">
+            <input
+              id="wa-template"
+              autoComplete="off"
+              className="field"
+              placeholder={status?.template ?? ""}
+              value={values.template}
+              onChange={(e) => setValues((v) => ({ ...v, template: e.target.value }))}
+            />
+          </Field>
+          <Field label="Idioma" htmlFor="wa-language">
+            <input
+              id="wa-language"
+              autoComplete="off"
+              className="field"
+              placeholder={status?.language ?? ""}
+              value={values.language}
+              onChange={(e) => setValues((v) => ({ ...v, language: e.target.value }))}
+            />
+          </Field>
+        </div>
+      </div>
+
+      <p className="text-[13px] text-secondary">
+        La plantilla tiene que estar aprobada por Meta como plantilla de autenticación, con el código como único
+        parámetro. Meta no permite mandar texto libre para esto.
+      </p>
+
+      <button type="button" disabled={saving} onClick={() => void save()} className="tap btn-primary">
+        {saving ? "Guardando…" : "Guardar WhatsApp"}
+      </button>
+    </div>
   );
 }

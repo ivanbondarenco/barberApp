@@ -3,9 +3,9 @@
 import * as m from "motion/react-m";
 import { CalendarPlus, CreditCard, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { CheckoutSheet } from "@/components/booking/CheckoutSheet";
+import { PayDepositSheet } from "@/components/booking/PayDepositSheet";
 import { NAV, Page } from "@/components/motion/Page";
 import { SuccessCheck } from "@/components/motion/SuccessCheck";
 import { downloadAppointmentIcs } from "@/lib/calendar";
@@ -14,7 +14,6 @@ import { money, paymentMethodLabel } from "@/lib/format";
 import { fadeUp } from "@/lib/motion";
 import { CASH_DEPOSIT_DEADLINE_HOURS, splitDeposit } from "@/lib/pricing";
 import { cashDepositDeadline } from "@/lib/schedule";
-import { registerDeposit } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 
 export default function PagoResultadoPage() {
@@ -26,13 +25,13 @@ export default function PagoResultadoPage() {
 }
 
 function PagoResultado() {
-  const router = useRouter();
   const { estado } = useParams<{ estado: string }>();
   const params = useSearchParams();
   const appointment = useAppStore((s) => s.appointments.find((a) => a.id === params.get("turno")));
   const barber = useAppStore((s) => s.barbers.find((b) => b.id === appointment?.barberId));
   const info = useAppStore((s) => s.businessInfo);
   const hours = useAppStore((s) => s.businessHours);
+  const depositRate = useAppStore((s) => s.depositSettings.rate);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const state = estado === "exito" || estado === "pendiente" ? estado : "error";
@@ -48,18 +47,34 @@ function PagoResultado() {
     );
   }
 
-  const split = appointment ? splitDeposit(appointment.servicePrice) : null;
+  const split = appointment ? splitDeposit(appointment.servicePrice, depositRate) : null;
   const deadline = appointment ? cashDepositDeadline(appointment.date, appointment.time, hours, CASH_DEPOSIT_DEADLINE_HOURS) : null;
 
+  // El texto de "pendiente" depende de por qué está pendiente: efectivo, transferencia avisada
+  // o pago online sin acreditar todavía.
+  const pendingText = () => {
+    if (!appointment || !split) return "";
+    if (appointment.deposit.status === "en_revision")
+      return "Recibimos tu aviso de transferencia. Confirmamos la seña apenas la veamos acreditada.";
+    if (appointment.deposit.method === "efectivo" && deadline)
+      return `Aboná ${money(split.deposit)} en el local antes del ${dayShort(toISODate(deadline))} ${dayNumber(toISODate(deadline))} a las ${deadline.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })} hs.`;
+    return `Todavía no nos llegó la seña de ${money(split.deposit)}. Si ya pagaste, puede demorar unos minutos en acreditarse.`;
+  };
+
   const copy = {
-    exito: { title: "¡Listo, te esperamos!", text: appointment ? `Seña abonada con ${paymentMethodLabel[appointment.deposit.method]}.` : "" },
-    pendiente: {
-      title: "Turno reservado",
-      text: deadline
-        ? `Aboná ${money(split!.deposit)} en el local antes del ${dayShort(toISODate(deadline))} ${dayNumber(toISODate(deadline))} a las ${deadline.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })} hs.`
-        : "",
+    exito: {
+      title: "¡Listo, te esperamos!",
+      text: !appointment
+        ? ""
+        : appointment.deposit.status === "abonada"
+          ? `Seña abonada con ${paymentMethodLabel[appointment.deposit.method]}.`
+          : "Estamos confirmando el pago con Mercado Pago. Puede tardar un minuto.",
     },
-    error: { title: "El pago no se completó", text: "No se cobró nada y el turno no se reservó. Probá con otro medio de pago." },
+    pendiente: { title: "Turno reservado", text: pendingText() },
+    error: {
+      title: "El pago no se completó",
+      text: "No se cobró nada. Tu horario queda reservado un rato más: podés reintentar el pago o elegir otro medio.",
+    },
   }[state];
 
   return (
@@ -106,9 +121,12 @@ function PagoResultado() {
         )}
         {state === "pendiente" && appointment && (
           <>
-            <button type="button" onClick={() => setCheckoutOpen(true)} className="tap btn-primary">
-              <CreditCard size={17} /> Pagar online ahora
-            </button>
+            {appointment.deposit.status !== "en_revision" && (
+              <button type="button" onClick={() => setCheckoutOpen(true)} className="tap btn-primary">
+                <CreditCard size={17} />
+                {appointment.deposit.method === "transferencia" ? "Ver datos y avisar" : "Pagar online ahora"}
+              </button>
+            )}
             <Link href={`/cliente/turno/${appointment.id}`} transitionTypes={[...NAV.forward]} className="tap btn-secondary">
               Ver mi turno
             </Link>
@@ -116,13 +134,19 @@ function PagoResultado() {
         )}
         {state === "error" && (
           <>
-            <Link
-              href={`/cliente/reservar${params.get("servicio") ? `?servicio=${params.get("servicio")}&barbero=${params.get("barbero") ?? ""}` : ""}`}
-              transitionTypes={[...NAV.back]}
-              className="tap btn-primary"
-            >
-              <RefreshCw size={17} /> Intentar de nuevo
-            </Link>
+            {appointment ? (
+              <button type="button" onClick={() => setCheckoutOpen(true)} className="tap btn-primary">
+                <RefreshCw size={17} /> Reintentar el pago
+              </button>
+            ) : (
+              <Link
+                href={`/cliente/reservar${params.get("servicio") ? `?servicio=${params.get("servicio")}&barbero=${params.get("barbero") ?? ""}` : ""}`}
+                transitionTypes={[...NAV.back]}
+                className="tap btn-primary"
+              >
+                <RefreshCw size={17} /> Intentar de nuevo
+              </Link>
+            )}
             <Link href="/ayuda" className="tap btn-secondary">
               Necesito ayuda
             </Link>
@@ -130,19 +154,7 @@ function PagoResultado() {
         )}
       </div>
 
-      {appointment && split && (
-        <CheckoutSheet
-          open={checkoutOpen}
-          onClose={() => setCheckoutOpen(false)}
-          amount={split.deposit}
-          description={`${appointment.serviceName} · ${appointment.time} hs`}
-          onApproved={async (method) => {
-            const result = await registerDeposit(appointment.id, method, "Seña abonada");
-            setCheckoutOpen(false);
-            if (result.ok) router.replace(`/cliente/pago/exito?turno=${appointment.id}`);
-          }}
-        />
-      )}
+      {appointment && <PayDepositSheet appointment={appointment} open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />}
     </Page>
   );
 }

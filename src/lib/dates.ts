@@ -51,6 +51,14 @@ export function workWeek(iso: string, weekOffset = 0): string[] {
   return Array.from({ length: 6 }, (_, i) => addDays(monday, i));
 }
 
+/** Primer y último día del mes que contiene `iso`, en formato ISO. */
+export function monthRange(iso: string): { from: string; to: string } {
+  const d = fromISODate(iso);
+  const from = toISODate(new Date(d.getFullYear(), d.getMonth(), 1));
+  const to = toISODate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+  return { from, to };
+}
+
 export function isoWeekNumber(iso: string): number {
   const d = fromISODate(iso);
   const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

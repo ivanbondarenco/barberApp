@@ -5,47 +5,48 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
-import { requestDepositPayment } from "@/lib/payments";
+import { HOLD_MINUTES } from "@/lib/pricing";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 
-type DigitalMethod = "mercadopago" | "transferencia";
+export type DigitalMethod = "mercadopago" | "transferencia";
 
 interface CheckoutSheetProps {
   open: boolean;
   onClose: () => void;
   amount: number;
   description: string;
-  onApproved: (method: DigitalMethod) => Promise<void> | void;
-  onRejected?: () => void;
+  /**
+   * Confirma el medio elegido. La pantalla que la usa reserva el turno y, según el medio,
+   * manda a Mercado Pago o registra el aviso de transferencia.
+   * Acá no se acredita nada: la seña la confirma el servidor.
+   */
+  onConfirm: (method: DigitalMethod) => Promise<void> | void;
+  /** "book": el turno se está creando. "pay": ya existe y se está saldando la seña. */
+  mode?: "book" | "pay";
 }
 
-/** Pago de la seña 50% (Mercado Pago simulado o transferencia). */
-export function CheckoutSheet({ open, onClose, amount, description, onApproved, onRejected }: CheckoutSheetProps) {
+/** Elección del medio para la seña del 50%. */
+export function CheckoutSheet({ open, onClose, amount, description, onConfirm, mode = "book" }: CheckoutSheetProps) {
   const info = useAppStore((s) => s.businessInfo);
-  const [method, setMethod] = useState<DigitalMethod>("mercadopago");
-  const [processing, setProcessing] = useState(false);
+  const mercadopagoReady = useAppStore((s) => s.integrations.mercadopagoReady);
+  const [method, setMethod] = useState<DigitalMethod>(mercadopagoReady ? "mercadopago" : "transferencia");
+  const [working, setWorking] = useState(false);
 
   useEffect(() => {
-    if (open) setProcessing(false);
-  }, [open]);
-
-  const pay = async () => {
-    setProcessing(true);
-    const result = await requestDepositPayment({
-      appointmentRef: description,
-      amount,
-      description,
-      method,
-    });
-    if (result.status === "approved") {
-      await onApproved(method);
-    } else if (onRejected) {
-      onRejected();
-    } else {
-      toast("El pago fue rechazado. Probá con otro medio.", "error");
+    if (open) {
+      setWorking(false);
+      setMethod(mercadopagoReady ? "mercadopago" : "transferencia");
     }
-    setProcessing(false);
+  }, [open, mercadopagoReady]);
+
+  const confirm = async () => {
+    setWorking(true);
+    try {
+      await onConfirm(method);
+    } finally {
+      setWorking(false);
+    }
   };
 
   const copy = async (text: string) => {
@@ -57,19 +58,26 @@ export function CheckoutSheet({ open, onClose, amount, description, onApproved, 
     }
   };
 
+  const options = [
+    { value: "mercadopago" as const, label: "Mercado Pago", icon: CreditCard, enabled: mercadopagoReady },
+    { value: "transferencia" as const, label: "Transferencia", icon: Landmark, enabled: true },
+  ].filter((o) => o.enabled);
+
   return (
     <Sheet
       open={open}
-      onClose={() => !processing && onClose()}
+      onClose={() => !working && onClose()}
       title="Pagar seña"
       subtitle={description}
       footer={
-        <button type="button" disabled={processing} onClick={() => pay()} className="tap btn-primary">
-          {processing
-            ? "Procesando…"
+        <button type="button" disabled={working} onClick={() => void confirm()} className="tap btn-primary">
+          {working
+            ? "Un momento…"
             : method === "mercadopago"
               ? `Pagar ${money(amount)} con Mercado Pago`
-              : `Ya transferí ${money(amount)}`}
+              : mode === "book"
+                ? `Reservar y transferir ${money(amount)}`
+                : `Ya transferí ${money(amount)}`}
         </button>
       }
     >
@@ -79,28 +87,25 @@ export function CheckoutSheet({ open, onClose, amount, description, onApproved, 
           <p className="text-4xl font-bold tracking-tight tabular-nums text-primary">{money(amount)}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Medio de pago">
-          {(
-            [
-              { value: "mercadopago", label: "Mercado Pago", icon: CreditCard },
-              { value: "transferencia", label: "Transferencia", icon: Landmark },
-            ] as const
-          ).map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={method === value}
-              onClick={() => setMethod(value)}
-              className={cn(
-                "tap flex flex-col items-center gap-1.5 rounded-2xl py-3 text-sm font-semibold transition-colors",
-                method === value ? "bg-primary text-on-primary shadow-cta" : "bg-surface-low text-ink",
-              )}
-            >
-              <Icon size={20} aria-hidden /> {label}
-            </button>
-          ))}
-        </div>
+        {options.length > 1 && (
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Medio de pago">
+            {options.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={method === value}
+                onClick={() => setMethod(value)}
+                className={cn(
+                  "tap flex flex-col items-center gap-1.5 rounded-2xl py-3 text-sm font-semibold transition-colors",
+                  method === value ? "bg-primary text-on-primary shadow-cta" : "bg-surface-low text-ink",
+                )}
+              >
+                <Icon size={20} aria-hidden /> {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {method === "transferencia" && (
           <div className="divide-y divide-surface-high rounded-2xl bg-surface-low">
@@ -121,8 +126,16 @@ export function CheckoutSheet({ open, onClose, amount, description, onApproved, 
           </div>
         )}
 
-        <p className="flex items-center gap-1.5 text-xs text-secondary">
-          <ShieldCheck size={15} className="text-primary" aria-hidden /> Se descuenta del total del servicio.
+        <p className="flex items-start gap-1.5 text-xs text-secondary">
+          <ShieldCheck size={15} className="mt-px shrink-0 text-primary" aria-hidden />
+          <span>
+            Se descuenta del total del servicio.{" "}
+            {method === "mercadopago"
+              ? `Te guardamos el horario ${HOLD_MINUTES} minutos mientras pagás.`
+              : mode === "book"
+                ? "Transferí a estos datos: confirmamos tu seña cuando la veamos acreditada."
+                : "Avisanos cuando hayas transferido y la confirmamos al verla acreditada."}
+          </span>
         </p>
       </div>
     </Sheet>

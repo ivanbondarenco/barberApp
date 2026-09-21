@@ -1,6 +1,8 @@
 # D.S Studio Barbería · WebApp PWA (MVP)
 
-App mobile-first y responsive para reservar turnos con **seña fija del 50%**, gestionar la agenda de los barberos, cobrar en el sillón y vender productos que se retiran durante el corte. Tiene backend propio con base SQLite, así que los datos se comparten entre todos los dispositivos.
+App mobile-first y responsive para reservar turnos con seña configurable, gestionar la agenda de los barberos, cobrar en el sillón y vender productos que se retiran durante el corte. Tiene backend propio con base SQLite, así que los datos se comparten entre todos los dispositivos.
+
+Es **multi-barbería**: cada local tiene su equipo, su catálogo, sus clientes, su caja y su cuenta de Mercado Pago, aislados del resto. Cada uno comparte su link `/b/<slug>` y por ahí entran sus clientes.
 
 ## Stack
 
@@ -21,21 +23,38 @@ npm run dev                  # http://localhost:3000
 npm run build && npm start   # producción
 ```
 
-La base se crea y se siembra sola la primera vez. Para empezar de cero, borrá la carpeta `data/`.
+La base se crea sola la primera vez y arranca **vacía**: la primera pantalla lleva a registrar una barbería. Para levantar la barbería de demostración con datos de ejemplo, arrancá con `SEED_DEMO=1`. Para empezar de cero, borrá la carpeta `data/`.
 
 | Variable | Uso |
 |---|---|
 | `DATABASE_PATH` | Ruta del archivo SQLite (por defecto `./data/ds-studio.db`) |
+| `MP_ACCESS_TOKEN` | Credencial de Mercado Pago. Opcional: lo habitual es cargarla desde **Configuración → Pagos**, que la guarda por barbería |
+| `MP_WEBHOOK_SECRET` | Clave secreta de la notificación de pagos. Sin ella el webhook rechaza todo |
+| `MP_PUBLIC_KEY` | Public key de Mercado Pago (hoy sin uso en el checkout redirigido) |
+| `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID` | Credenciales de WhatsApp Cloud API. Opcionales: lo habitual es cargarlas desde **Configuración → Conexiones** |
+| `WA_TEMPLATE`, `WA_LANGUAGE` | Plantilla de autenticación aprobada por Meta y su idioma (por defecto `otp_code` / `es_AR`) |
+| `OTP_DEBUG` | **Solo desarrollo.** Con `1` los códigos viajan en la respuesta en vez de enviarse por WhatsApp |
+| `SEED_DEMO` | **Solo desarrollo.** Con `1` crea la barbería de demostración si la base está vacía |
+| `BACKUP_DIR`, `BACKUP_KEEP` | Destino y cantidad de copias de `npm run backup` |
+
+Ver `.env.example`. Las credenciales que cargue cada barbería desde la app tienen prioridad sobre las variables de entorno, que quedan como atajo para un deploy de un solo local.
 
 ### Cuentas sembradas
+
+Con `SEED_DEMO=1` la base arranca con una barbería de demostración (`/b/ds-studio`) y estas cuentas:
 
 | Rol | Usuario | PIN |
 |---|---|---|
 | Cliente | `+54 9 11 5555 0192` | `1234` |
-| Barbero / Admin | `admin@dsstudio.com.ar` | `1234` |
-| Código WhatsApp (registro, recuperar PIN, acceso con código) | — | `123456` |
+| Dueño | `admin@dsstudio.com.ar` | `1234` |
+| Código WhatsApp (registro, recuperar PIN, acceso con código) | — | se envía al celular |
 
 Después de 5 PIN incorrectos, ese usuario queda bloqueado 10 minutos.
+El PIN sembrado se cambia desde **Configuración → Cuenta**; hacelo antes de abrir la app al público.
+
+Los barberos no vienen sembrados: el dueño les da acceso desde **Equipo**, con su email o celular y un PIN inicial.
+
+Para crear otra barbería: **Registrar mi barbería** en la pantalla inicial, o `POST /api/shops`.
 
 ## Arquitectura
 
@@ -52,21 +71,96 @@ Pantalla ──run(command)──▶ Zustand (aplica el cambio al instante)
 ```
 
 - **`src/lib/commands.ts`**: todas las altas, bajas y modificaciones como comandos puros (`appointment.book`, `service.upsert`, `client.delete`, `cash.close`…). La misma función corre en el cliente (respuesta inmediata) y en el servidor (fuente de verdad).
-- **Permisos**: el servidor decide según la sesión. El cliente solo opera sobre sus propios turnos y su perfil. Los horarios ocupados de otros clientes le llegan anónimos.
+- **Permisos**: el servidor decide según la sesión, con lista blanca por rol. Todo ocurre siempre dentro de la barbería de esa sesión.
+  - **Cliente**: solo sus turnos y su perfil. Los horarios ocupados de otros le llegan anónimos.
+  - **Barbero**: su agenda completa y sus cobros. Los turnos de otros sillones le llegan anónimos; no ve caja ni cierres, y no toca catálogo, equipo ni configuración.
+  - **Dueño**: todo.
+  - **Sistema**: el webhook de la pasarela. Lo único que puede hacer es acreditar una seña.
 - **Sesiones**: cookie `httpOnly` con token aleatorio (se guarda solo su hash) y PIN con hash `scrypt`.
-- **API**: `GET /api/state`, `POST /api/commands`, `POST /api/auth/{login,otp,register,recover,pin,logout}`.
+- **API**: `GET /api/state`, `POST /api/commands`, `POST /api/auth/{login,otp,register,recover,pin,logout}`, `GET|POST /api/shops`, `POST /api/payments/{checkout,webhook}`, `GET|POST /api/settings/payments`, `POST /api/staff/account`.
+
+## Multi-barbería
+
+Cada barbería es una isla. El aislamiento vive en la capa de datos, no en la UI:
+
+- **Datos**: toda fila de dominio lleva `shop_id` y la clave primaria es `(shop_id, id)`. Dos locales pueden tener los mismos ids sembrados sin pisarse, y cada consulta filtra por barbería.
+- **Quién decide la barbería**: sale de la sesión (`users.shop_id`), nunca de la URL ni del cuerpo del pedido. El `Actor` la lleva siempre, así ninguna operación puede cruzarse de local por olvido.
+- **Cuentas**: son por barbería (`UNIQUE (shop_id, identifier)`). El mismo celular puede ser cliente de dos locales, con su propio historial y su propio crédito en cada uno.
+- **Visitantes sin sesión**: el link `/b/<slug>` deja la barbería en una cookie. Si la instalación tiene un solo local, se usa ese y no hace falta link. Con varios, la pantalla inicial muestra el selector.
+- **Plata y avisos**: las credenciales de Mercado Pago y de WhatsApp se guardan por barbería (`secrets.scope`), y el webhook sabe a cuál acreditarle porque la barbería viaja en su `notification_url` y se verifica contra el `external_reference` del pago.
+- **Versión de estado**: cada barbería tiene la suya, así la sincronización de un local no despierta a los demás.
+- **Barbería nueva**: arranca con tres servicios base, el dueño como primer sillón y todo lo demás vacío. `demo.reset` solo existe para la barbería de demostración.
+
+| Ruta | Para qué |
+|---|---|
+| `/` | Selector de barbería (solo si hay varias y el visitante no eligió) |
+| `/b/<slug>` | **Link público del local.** Fija la barbería y abre su carta |
+| `/local` | Carta pública: servicios, precios, equipo, horarios y política de seña, sin necesidad de cuenta |
+| `/auth/nueva-barberia` | Alta de una barbería con su dueño |
+| `/api/health` | Estado del servicio y métricas de storage, para el monitoreo del hosting |
+
+El dueño encuentra su link en **Configuración → Negocio**, con botones para copiarlo y compartirlo. Es la única forma que tienen sus clientes de llegar a reservar, así que está arriba de todo.
+
+Cada barbería publica **sus** datos: una barbería nueva arranca con la dirección y el WhatsApp que cargó en el alta, nunca con los de otra. El manifiesto de la PWA (`/manifest.webmanifest`) se arma por pedido, así que quien instala la app en el celular ve el nombre de su local.
+
+## Códigos de verificación
+
+El registro, el acceso por código y la recuperación de PIN se verifican con un código de 6 dígitos que se manda por **WhatsApp Cloud API**, con la cuenta de cada barbería.
+
+- **Aleatorio** (`crypto.randomInt`) y **guardado hasheado**: en la base no queda el código.
+- **Vence a los 10 minutos**, sirve **una sola vez** y está acotado al trámite: un código pedido para entrar no sirve para cambiar el PIN.
+- **5 intentos** y queda inutilizable. Agotarlos **no** permite pedir otro enseguida — si lo permitiera, el tope no serviría de nada.
+- **1 minuto de espera** entre envíos al mismo número.
+- Meta no deja mandar texto libre para esto, así que se usa una **plantilla de autenticación aprobada** con el código como único parámetro. El nombre y el idioma se configuran por barbería.
+- **Sin WhatsApp configurado** la barbería no puede emitir códigos: sus clientes no pueden auto-registrarse y el local tiene que cargarlos a mano. No hay código fijo de reserva, que era el agujero anterior.
+
+Para desarrollo y tests existe `OTP_DEBUG=1`, que devuelve el código en la respuesta en vez de enviarlo. Nunca en producción.
+
+## Cobro de la seña
+
+Cada barbería elige cuánta seña pide desde **Configuración → Señas**: 0% (sin seña), 30%, 50% o 100%. Cambiarla no afecta a los turnos ya reservados, que conservan la seña con la que se confirmaron.
+
+La regla de fondo es una sola: **el navegador nunca decide si entró la plata.** El turno se crea siempre con la seña `pendiente` y solo el servidor la pasa a `abonada`.
+
+| Medio | Qué pasa al reservar | Quién acredita |
+|---|---|---|
+| Mercado Pago | Turno `pendiente` que retiene el horario 15 min y redirige a Checkout Pro | El webhook, después de consultar el pago contra la API de Mercado Pago |
+| Transferencia | Turno `pendiente` con el alias y el CBU a la vista | El staff, cuando la ve acreditada. El aviso del cliente la deja `en_revision`, que **no** es plata |
+| Efectivo | Turno `pendiente` con vencimiento 4 h antes | El staff, al cobrarla en el mostrador |
+| Crédito a favor | Turno `abonado` al instante | El servidor, que verifica y descuenta el crédito en la misma operación |
+| Sin seña (0%) | Turno confirmado al instante | Nada que acreditar: se cobra todo en el sillón |
+
+- **Reserva que vence**: una reserva digital retiene el horario `HOLD_MINUTES` (15). Si no se acredita, se libera sola — el barrido corre al principio de cada comando, sin cron.
+- **Webhook**: valida la firma HMAC (`x-signature` + `x-request-id`), consulta el pago con el access token del local y aplica cada notificación una sola vez. Configuralo en Mercado Pago apuntando a `/api/payments/webhook`.
+- **Sin credenciales cargadas** la app ofrece solo transferencia y efectivo.
+
+## Ausencias y recordatorios
+
+- **No vino**: se marca desde el turno una vez pasada la hora. La seña abonada queda para el local y **no** vuelve como crédito. Para perdonar la ausencia se cancela el turno, que sí lo devuelve.
+- **Ausencias reiteradas**: con 2 ausencias, ese cliente deja de poder reservar con seña en efectivo y tiene que abonarla por adelantado. Es la política que figura en `/politicas`, aplicada por el servidor — no un texto suelto.
+- **Recordatorios**: `/admin/recordatorios` arma la cola de las próximas 24 h (turnos confirmados, con seña resuelta y cliente que los pidió). Hoy se mandan con un toque por WhatsApp y se marcan enviados; la cola es una función pura sobre la agenda (`src/lib/reminders.ts`), lista para que un worker la consuma cuando esté la WhatsApp Cloud API.
+
+## Reseñas
+
+El rating de cada barbero **no se carga a mano**: sale de las reseñas reales de sus turnos.
+
+- Solo el cliente califica, solo su propio turno, solo si está `completado` y una sola vez. Ni el dueño ni el barbero pueden calificarse.
+- `rating` y `reviews` son campos derivados: se calculan al leer el estado y no se guardan en el JSON del barbero.
+- Sin reseñas no se muestra ninguna estrella. Una barbería nueva arranca sin reputación inventada.
 
 ## ABM disponible
 
 | Entidad | Alta | Modificación | Baja |
 |---|---|---|---|
-| Turnos | Reserva online / turno manual (crea la ficha si no existe) | Editar servicio, barbero, fecha, hora y nota; reprogramar | Cancelar (seña → crédito) / eliminar cancelados |
+| Turnos | Reserva online / turno manual (crea la ficha si no existe) | Editar servicio, barbero, fecha, hora y nota; reprogramar; marcar ausente | Cancelar (seña → crédito) / eliminar cancelados |
 | Servicios | ✓ | ✓ (precio, duración, visible, destacado) | ✓ con **Deshacer** |
 | Productos | ✓ | ✓ (stock, precio, publicado) | ✓ con **Deshacer** |
 | Clientes | ✓ | ✓ (datos, preferencias, nota interna) | ✓ con confirmación (borra su cuenta) |
-| Barberos | ✓ | ✓ (sillón, activo) | ✓ con confirmación (se bloquea si tiene turnos próximos) |
+| Barberos | ✓ | ✓ (sillón, activo, acceso a la app y PIN) | ✓ con confirmación (se bloquea si tiene turnos próximos) |
 | Bloqueos de agenda | ✓ | — | ✓ |
 | Horarios, datos del negocio, caja | — | ✓ | — |
+| Seña del local (0/30/50/100%) | — | ✓ | — |
+| Credenciales de Mercado Pago y WhatsApp, PIN propio | — | ✓ | ✓ (campo vacío) |
 
 ## UX y animaciones
 
@@ -79,9 +173,28 @@ Pantalla ──run(command)──▶ Zustand (aplica el cambio al instante)
 
 - La seña es siempre el 50% (`DEPOSIT_RATE` en `src/lib/pricing.ts`) y no se puede configurar.
 - Cancelar o reprogramar sin cargo se permite hasta 3 h antes. Si la seña estaba abonada, queda como crédito a favor, que se puede usar como seña en la próxima reserva.
+- Una seña `en_revision` todavía no entró: al cancelar no genera crédito.
+- Si el cliente no se presenta, la seña abonada queda para el local.
 - La seña en efectivo vence 4 h antes del turno, ajustada al horario del local.
 - Los productos agregados a un turno descuentan stock y se suman al saldo del sillón.
 - Con la caja cerrada no se puede cobrar.
+
+## Operación
+
+- **Health check**: `GET /api/health` devuelve estado, cantidad de barberías y métricas de storage. No expone datos de ningún local.
+- **Backups**: `npm run backup` copia el archivo de la base con fecha y rota las últimas `BACKUP_KEEP` (14 por defecto). Pensado para un cron diario: `0 3 * * * cd /app && npm run backup`. La app escribe con temporal + rename, así que la copia siempre toma una versión consistente.
+- **Docker**: hay `Dockerfile` listo. La base va en el volumen `/data`; si `DATABASE_PATH` queda dentro del contenedor, cada deploy borra los turnos.
+
+### El techo de storage, medido
+
+Con `sql.js` cada comando reescribe **el archivo entero**. Medido sobre datos reales: **573 bytes por turno**, o sea unos 5 MB al año por barbería con 30 turnos diarios.
+
+Las escrituras que caen juntas se juntan en una sola (`persist()` en `src/server/db.ts`), así que una ráfaga de N comandos cuesta dos escrituras y no N, y el guardado es asíncrono para no bloquear el event loop. Eso corre el techo, pero no lo elimina: el costo por escritura sigue creciendo con el total de datos.
+
+**El número a vigilar es `storage.lastWriteMs` en `/api/health`.** Mientras esté en pocos milisegundos no hay problema; cuando empiece a subir (estimado entre 20 y 50 barberías activas), toca migrar. Las dos salidas reales:
+
+1. **Postgres.** Es la que recomiendo: el modelo ya está particionado por `shop_id` y `supabase/schema.sql` sirve de guía. Además destraba correr en más de una instancia.
+2. **SQLite nativo** (`better-sqlite3`), que escribe incremental en vez del archivo completo. Se probó y el binario precompilado **segfaultea** en Node 22 sobre Windows, así que quedaría atado a compilar en el server.
 
 ## Tests
 
@@ -93,14 +206,15 @@ npm run test:coverage   # cobertura de src/lib y src/server
 npm run test:e2e:ui     # modo interactivo de Playwright
 ```
 
-- **Unitarios** (`tests/unit`): seña del 50%, cálculo de saldos, disponibilidad de horarios y bloqueos, plazo de la seña en efectivo, todas las altas, bajas y modificaciones con sus validaciones, permisos por rol, crédito a favor, cobros y caja, persistencia y transacciones en SQLite, hash de PIN y datos visibles por rol.
-- **E2E** (`tests/e2e`): ingreso, bloqueo por intentos, registro, código y recuperación de PIN; reserva online, en efectivo, rechazada, reprogramación, cancelación con crédito y uso del crédito; tienda y perfil; agenda, turno manual, seña, productos, cobro, bloqueos y cierre de caja; ABM de servicios, productos, clientes y barberos; sincronización entre dispositivos; seguridad de la API.
+- **Unitarios** (`tests/unit`): seña del 50%, cálculo de saldos, disponibilidad de horarios y bloqueos, plazo de la seña en efectivo, todas las altas, bajas y modificaciones con sus validaciones, permisos por rol, crédito a favor, cobros y caja, persistencia y transacciones en SQLite, hash de PIN y datos visibles por rol. Además: que el cliente no pueda acreditarse la seña, vencimiento de la reserva sin pagar, transferencia en revisión, ausencias y su efecto sobre reservas futuras, cola de recordatorios, códigos de verificación (unicidad, vencimiento, intentos, cooldown, hash), seña configurable por barbería, reseñas y aislamiento entre barberías (estado, ids repetidos, versiones, cuentas, credenciales). Además, la migración de una base anterior a la multi-barbería y que en producción la base arranque vacía.
+- **E2E** (`tests/e2e`): ingreso, bloqueo por intentos, registro, código y recuperación de PIN; reserva con transferencia y su confirmación por el staff, seña en efectivo, reprogramación, cancelación con crédito y uso del crédito; tienda y perfil; agenda, turno manual, seña, productos, cobro, bloqueos y cierre de caja; ABM de servicios, productos, clientes y barberos; cuentas de barbero y su aislamiento; ausencias y recordatorios; carga de credenciales de Mercado Pago; alta de barberías, selector, link público, carta pública y aislamiento entre locales; el dueño copiando su link; reseñas del cliente reflejadas en la carta; códigos de un solo uso y bloqueo por intentos; sincronización entre dispositivos; seguridad de la API.
 - **Accesibilidad y usabilidad**: auditoría WCAG 2.1 AA con axe en todas las pantallas y en los formularios; sin scroll horizontal en mobile; controles de al menos 40 px; botón atrás del teléfono y "reducir movimiento".
 - Los E2E usan el Chrome instalado (`channel: "chrome"`) y una base descartable en `.test-data/`, sin tocar `data/`.
 
 ## Pendiente para producción
 
-1. **Mercado Pago real.** Reemplazar `requestDepositPayment` (`src/lib/payments.ts`) por Checkout Pro más un webhook que ejecute `appointment.deposit` del lado del servidor. Hoy el cobro online es simulado.
-2. **OTP real.** Enviar el código por WhatsApp Cloud API o Twilio. Hoy el código es fijo.
-3. **Deploy.** Necesita disco persistente: VPS, Railway, Render o Fly con un volumen en `DATABASE_PATH`. Para escalar a varias instancias, migrar a Postgres; `supabase/schema.sql` sirve de guía.
-4. **Cuentas de staff por barbero.** Hoy existe un único usuario admin.
+1. **Migrar el storage cuando toque.** Ver *El techo de storage* más arriba: mirar `storage.lastWriteMs` en `/api/health` y migrar a Postgres antes de que empiece a subir.
+2. **Monitoreo de errores.** Hoy los errores van a `console.error`. Falta engancharlos a algo que avise (Sentry o similar): un webhook de pago que falle en silencio es plata que no entra.
+3. **Recordatorios automáticos.** Hoy se mandan con un toque desde `/admin/recordatorios`. Para que salgan solos hacen falta un proceso que despierte (cron) y una plantilla de WhatsApp aprobada para recordatorios — la de autenticación no sirve para eso.
+4. **Promociones.** El switch de "novedades" se quitó porque no había nada detrás. Si se quiere marketing a clientes, es una función nueva: segmentación, plantilla aprobada y control de frecuencia.
+5. **Dominio por barbería.** Hoy cada local se comparte con `/b/<slug>`. Si en algún momento quieren `sunombre.tuapp.com`, alcanza con resolver la barbería desde el subdominio en lugar de la cookie: el resto del modelo no cambia.

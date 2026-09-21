@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ChevronDown, ChevronRight, CircleX, Minus, NotebookPen, Pencil, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleX, Minus, NotebookPen, Pencil, Phone, Plus, Smartphone, Trash2, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,11 +16,11 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Sheet } from "@/components/ui/Sheet";
 import { EmptyState, Section } from "@/components/ui/States";
 import { cn } from "@/lib/cn";
-import { longDate } from "@/lib/dates";
+import { hoursUntil, longDate } from "@/lib/dates";
 import { money, paymentMethodLabel, whatsappLink } from "@/lib/format";
 import { ease, spring } from "@/lib/motion";
 import { appointmentTotals } from "@/lib/pricing";
-import { addProductToAppointment, cancelAppointment, deleteAppointment, removeProductFromAppointment } from "@/store/actions";
+import { addProductToAppointment, cancelAppointment, deleteAppointment, markNoShow, registerDeposit, rejectDeposit, removeProductFromAppointment } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 
@@ -35,7 +35,7 @@ export default function AdminTurnoPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [productsOpen, setProductsOpen] = useState(false);
   const [charging, setCharging] = useState<ChargeMode | null>(null);
-  const [confirm, setConfirm] = useState<"cancel" | "delete" | null>(null);
+  const [confirm, setConfirm] = useState<"cancel" | "delete" | "noShow" | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
 
   if (!appointment) {
@@ -57,6 +57,9 @@ export default function AdminTurnoPage() {
   const t = appointmentTotals(appointment);
   const active = appointment.status === "confirmado";
   const depositPaid = appointment.deposit.status === "abonada";
+  const underReview = appointment.deposit.status === "en_revision";
+  // Recién se puede marcar ausente una vez que pasó la hora del turno.
+  const started = hoursUntil(appointment.date, appointment.time) <= 0;
 
   const openCharge = (mode: ChargeMode) => {
     if (!cashOpen) return toast("Abrí la caja para registrar cobros", "error");
@@ -118,8 +121,12 @@ export default function AdminTurnoPage() {
             <div className="row">
               <span className="flex-1 text-[15px]">
                 Seña 50%
-                <span className={cn("block text-xs", depositPaid ? "text-mint-ink" : "text-secondary")}>
-                  {depositPaid ? `Abonada · ${paymentMethodLabel[appointment.deposit.method]}` : "Pendiente"}
+                <span className={cn("block text-xs", depositPaid ? "text-mint-ink" : underReview ? "text-amber-ink" : "text-secondary")}>
+                  {depositPaid
+                    ? `Abonada · ${paymentMethodLabel[appointment.deposit.method]}`
+                    : underReview
+                      ? "Transferencia avisada · a confirmar"
+                      : "Pendiente"}
                 </span>
               </span>
               <span className="text-[15px] tabular-nums">{depositPaid ? `−${money(t.depositPaid)}` : money(t.deposit)}</span>
@@ -157,6 +164,34 @@ export default function AdminTurnoPage() {
           </div>
         </Section>
 
+        {underReview && active && (
+          <Section title="Transferencia a confirmar">
+            <div className="rounded-2xl bg-amber-container/60 p-4">
+              <p className="text-[13px] text-amber-ink">
+                {appointment.clientName.split(" ")[0]} avisó que transfirió {money(t.deposit)}
+                {appointment.deposit.reference ? ` (comprobante ${appointment.deposit.reference})` : ""}. Confirmá
+                solo cuando la veas acreditada en la cuenta.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void rejectDeposit(appointment.id)}
+                  className="tap btn-secondary"
+                >
+                  No la encuentro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void registerDeposit(appointment.id, "transferencia", "Seña confirmada")}
+                  className="tap btn-primary"
+                >
+                  Confirmar seña
+                </button>
+              </div>
+            </div>
+          </Section>
+        )}
+
         {appointment.notes && (
           <p className="flex items-start gap-2 rounded-2xl bg-surface-lowest px-4 py-3 text-[15px] shadow-xs">
             <NotebookPen size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden /> {appointment.notes}
@@ -164,13 +199,20 @@ export default function AdminTurnoPage() {
         )}
 
         {active ? (
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setEditOpen(true)} className="tap btn-secondary">
-              <Pencil size={16} /> Editar
-            </button>
-            <button type="button" onClick={() => setConfirm("cancel")} className="tap btn-destructive">
-              <CircleX size={16} /> Cancelar
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setEditOpen(true)} className="tap btn-secondary">
+                <Pencil size={16} /> Editar
+              </button>
+              <button type="button" onClick={() => setConfirm("cancel")} className="tap btn-destructive">
+                <CircleX size={16} /> Cancelar
+              </button>
+            </div>
+            {started && (
+              <button type="button" onClick={() => setConfirm("noShow")} className="tap btn-secondary text-error">
+                <UserX size={16} /> No vino
+              </button>
+            )}
           </div>
         ) : (
           appointment.status === "cancelado" && (
@@ -252,6 +294,21 @@ export default function AdminTurnoPage() {
         confirmLabel="Cancelar turno"
         onConfirm={async () => {
           await cancelAppointment(appointment.id);
+        }}
+      />
+      <ConfirmDialog
+        open={confirm === "noShow"}
+        onClose={() => setConfirm(null)}
+        destructive
+        title="¿El cliente no se presentó?"
+        description={
+          depositPaid
+            ? `La seña de ${money(t.depositPaid)} queda para el local: no se devuelve como crédito. Si preferís perdonarla, cancelá el turno en vez de marcar la ausencia.`
+            : "El turno queda registrado como ausencia. No había seña abonada."
+        }
+        confirmLabel="Marcar ausente"
+        onConfirm={async () => {
+          await markNoShow(appointment.id);
         }}
       />
       <ConfirmDialog

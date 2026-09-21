@@ -4,15 +4,20 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { applyCommand, DomainError, type Actor, type Command, type DomainState } from "@/lib/commands";
+import { DEFAULT_DEPOSIT_RATE } from "@/lib/pricing";
 import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
 import { seedBusinessInfo } from "@/lib/mock-data";
-import type { ClientProfile, Role, Session } from "@/lib/types";
+import type { ClientProfile, Role, Session, Shop } from "@/lib/types";
 
 export type Result = { ok: true } | { ok: false; error: string };
 
 interface ServerPayload {
   version: number;
   session: Session | null;
+  /** Barbería sobre la que se está operando (la de la sesión o la elegida por el visitante). */
+  shop?: Shop | null;
+  /** Solo cuando todavía no hay una barbería elegida: las opciones disponibles. */
+  shops?: Shop[];
   state?: DomainState;
   unchanged?: boolean;
   error?: string;
@@ -20,6 +25,10 @@ interface ServerPayload {
 
 interface SyncState {
   session: Session | null;
+  /** Barbería activa. `null` mientras el visitante no eligió una. */
+  shop: Shop | null;
+  /** Barberías entre las que elegir cuando no hay ninguna activa. */
+  shops: Shop[];
   version: number;
   /** Ya se recibió al menos una respuesta del servidor en esta carga. */
   synced: boolean;
@@ -31,7 +40,7 @@ interface Actions {
   run: (command: Command) => Promise<Result>;
   login: (role: Role, identifier: string, pin: string) => Promise<Result>;
   otp: (phone: string, code?: string) => Promise<Result>;
-  register: (input: { name: string; phone: string; email?: string; pin: string; code: string }) => Promise<Result>;
+  register: (input: { name: string; phone: string; email?: string; pin: string; code?: string }) => Promise<Result>;
   recover: (input: { identifier: string; code?: string; pin?: string }) => Promise<Result>;
   changePin: (currentPin: string, newPin: string) => Promise<Result>;
   logout: () => Promise<void>;
@@ -46,11 +55,13 @@ const emptyDomain: DomainState = {
   products: [],
   appointments: [],
   blocks: [],
-  depositSettings: { allowCash: true },
+  depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
   cashRegister: { open: false },
   cashClosures: [],
   businessHours: DEFAULT_BUSINESS_HOURS,
   businessInfo: seedBusinessInfo,
+  // Lo confirma el servidor en el primer /api/state; por defecto, sin integraciones.
+  integrations: { mercadopagoReady: false, whatsappReady: false },
 };
 
 const DOMAIN_KEYS = Object.keys(emptyDomain) as (keyof DomainState)[];
@@ -61,7 +72,10 @@ export function domainOf(state: DomainState): DomainState {
 
 export function actorOf(session: Session | null): Actor | null {
   if (!session) return null;
-  return session.role === "admin" ? { role: "admin" } : { role: "cliente", clientId: session.clientId ?? "" };
+  const shopId = session.shop.id;
+  if (session.role === "admin") return { role: "admin", shopId };
+  if (session.role === "barbero") return { role: "barbero", shopId, barberId: session.barberId ?? "" };
+  return { role: "cliente", shopId, clientId: session.clientId ?? "" };
 }
 
 async function request(url: string, body?: unknown): Promise<ServerPayload & { status: number }> {
@@ -85,11 +99,23 @@ export const useAppStore = create<AppState>()(
       const accept = (data: ServerPayload) => {
         const current = get();
         const sessionChanged = JSON.stringify(data.session) !== JSON.stringify(current.session);
-        if (data.state && (data.version >= current.version || sessionChanged)) {
+        const shopChanged = (data.shop?.id ?? null) !== (current.shop?.id ?? null);
+        const meta = {
+          session: data.session,
+          shop: data.shop ?? null,
+          shops: data.shops ?? [],
+          synced: true,
+          offline: false,
+        };
+        // Al cambiar de barbería el cache viejo no sirve: son datos de otro local.
+        if (data.state && (data.version >= current.version || sessionChanged || shopChanged)) {
           confirmed = data.state;
-          set({ ...data.state, version: data.version, session: data.session, synced: true, offline: false });
+          set({ ...data.state, version: data.version, ...meta });
+        } else if (shopChanged && !data.state) {
+          confirmed = null;
+          set({ ...emptyDomain, version: 0, ...meta });
         } else {
-          set({ session: data.session, synced: true, offline: false });
+          set(meta);
         }
       };
 
@@ -106,6 +132,8 @@ export const useAppStore = create<AppState>()(
       return {
         ...emptyDomain,
         session: null,
+        shop: null,
+        shops: [],
         version: 0,
         synced: false,
         offline: false,
@@ -166,7 +194,8 @@ export const useAppStore = create<AppState>()(
 
         register: async (input) => {
           const result = await authCall("/api/auth/register", input);
-          if (result.ok) await get().refresh(true);
+          // Sin código solo se pidió el envío: todavía no hay sesión que refrescar.
+          if (result.ok && input.code) await get().refresh(true);
           return result;
         },
 
@@ -184,11 +213,11 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "ds-studio-cache",
-      version: 3,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       // Cache para abrir al instante y mostrar datos sin conexión; el servidor es la fuente de verdad.
-      partialize: (s) => ({ ...domainOf(s), session: s.session, version: s.version }),
-      migrate: () => ({ ...emptyDomain, session: null, version: 0 }) as unknown as AppState,
+      partialize: (s) => ({ ...domainOf(s), session: s.session, shop: s.shop, version: s.version }),
+      migrate: () => ({ ...emptyDomain, session: null, shop: null, shops: [], version: 0 }) as unknown as AppState,
     },
   ),
 );

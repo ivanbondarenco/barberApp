@@ -1,4 +1,4 @@
-import { BadgeCheck, CalendarClock, CalendarPlus, CircleCheck, CircleX, type LucideIcon } from "lucide-react";
+import { BadgeCheck, CalendarClock, CalendarPlus, CircleCheck, CircleX, Hourglass, UserX, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { dayNumber, dayShort, monthShort } from "@/lib/dates";
 import { money, paymentMethodLabel } from "@/lib/format";
@@ -28,6 +28,15 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
       tone: "neutral",
     },
   ];
+  if (a.deposit.declaredAt && a.deposit.status !== "abonada") {
+    events.push({
+      icon: Hourglass,
+      label: "Transferencia avisada",
+      detail: a.deposit.reference ? `Comprobante ${a.deposit.reference}` : "A confirmar por el local",
+      at: a.deposit.declaredAt,
+      tone: "neutral",
+    });
+  }
   if (a.deposit.status === "abonada") {
     events.push({
       icon: BadgeCheck,
@@ -59,9 +68,22 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
   if (a.status === "cancelado") {
     events.push({
       icon: CircleX,
-      label: "Turno cancelado",
-      detail: a.creditIssued ? `Crédito a favor ${money(a.creditIssued)}` : "Sin reintegro de seña",
+      label: a.holdExpired ? "Reserva liberada" : "Turno cancelado",
+      detail: a.holdExpired
+        ? "Venció el plazo para pagar la seña"
+        : a.creditIssued
+          ? `Crédito a favor ${money(a.creditIssued)}`
+          : "Sin reintegro de seña",
       at: a.cancelledAt,
+      tone: "error",
+    });
+  }
+  if (a.status === "no_show") {
+    events.push({
+      icon: UserX,
+      label: "No se presentó",
+      detail: a.depositForfeited ? `Seña retenida ${money(a.depositForfeited)}` : "No había seña abonada",
+      at: a.noShowAt,
       tone: "error",
     });
   }

@@ -18,7 +18,7 @@ import { dateTime, dayNumber, dayShort, longDate, timeToMinutes, todayISO, workW
 import { money } from "@/lib/format";
 import { ease, listItem } from "@/lib/motion";
 import { appointmentTotals } from "@/lib/pricing";
-import { shiftOf } from "@/lib/schedule";
+import { firstOpenDay, shiftOf } from "@/lib/schedule";
 import type { Appointment, TimeBlock } from "@/lib/types";
 import { deleteBlock, openCash } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
@@ -32,21 +32,31 @@ export default function AgendaPage() {
   const appointments = useAppStore((s) => s.appointments);
   const blocks = useAppStore((s) => s.blocks);
   const cashRegister = useAppStore((s) => s.cashRegister);
+  const session = useAppStore((s) => s.session);
+  const isOwner = session?.role === "admin";
 
   const today = todayISO();
+  const hours = useAppStore((s) => s.businessHours);
+  // Si hoy el local está cerrado (domingo, por ejemplo), la agenda arranca en el próximo día
+  // abierto en vez de mostrar un día vacío y la semana que ya pasó.
+  const anchor = useMemo(() => firstOpenDay(today, hours), [today, hours]);
   const [weekOffset, setWeekOffset] = useState(0);
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(anchor);
   const [direction, setDirection] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockToDelete, setBlockToDelete] = useState<TimeBlock | null>(null);
   const [cashConfirm, setCashConfirm] = useState(false);
 
-  const week = useMemo(() => workWeek(today, weekOffset), [today, weekOffset]);
+  const week = useMemo(() => workWeek(anchor, weekOffset), [anchor, weekOffset]);
 
+  const mine = useMemo(
+    () => (isOwner ? appointments : appointments.filter((a) => a.barberId === session?.barberId)),
+    [appointments, isOwner, session?.barberId],
+  );
   const dayAppointments = useMemo(
-    () => appointments.filter((a) => a.date === date && a.status !== "cancelado"),
-    [appointments, date],
+    () => mine.filter((a) => a.date === date && a.status !== "cancelado"),
+    [mine, date],
   );
   const items = useMemo<Item[]>(
     () =>
@@ -87,7 +97,7 @@ export default function AgendaPage() {
         <div className="mt-2 grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Día">
           {week.map((d) => {
             const active = d === date;
-            const count = appointments.filter((a) => a.date === d && a.status !== "cancelado").length;
+            const count = mine.filter((a) => a.date === d && a.status !== "cancelado").length;
             return (
               <button
                 key={d}
@@ -116,14 +126,16 @@ export default function AgendaPage() {
         <button type="button" onClick={() => setBlockOpen(true)} aria-label="Bloquear horario" className="icon-btn h-10 w-10 bg-surface-lowest text-secondary shadow-xs">
           <Ban size={15} />
         </button>
-        <button
-          type="button"
-          onClick={() => (cashRegister.open ? router.push("/admin/finanzas/cierre", { transitionTypes: [...NAV.forward] }) : setCashConfirm(true))}
-          className={cn("chip min-h-10 px-3", cashRegister.open ? "bg-mint text-mint-ink" : "bg-error-container text-error")}
-        >
-          <span className={cn("h-1.5 w-1.5 rounded-full", cashRegister.open ? "bg-mint-ink" : "bg-error")} />
-          {cashRegister.open ? "Caja abierta" : "Caja cerrada"}
-        </button>
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => (cashRegister.open ? router.push("/admin/finanzas/cierre", { transitionTypes: [...NAV.forward] }) : setCashConfirm(true))}
+            className={cn("chip min-h-10 px-3", cashRegister.open ? "bg-mint text-mint-ink" : "bg-error-container text-error")}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", cashRegister.open ? "bg-mint-ink" : "bg-error")} />
+            {cashRegister.open ? "Caja abierta" : "Caja cerrada"}
+          </button>
+        )}
       </div>
 
       {/* Lista */}

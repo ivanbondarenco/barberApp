@@ -4,15 +4,11 @@
  * - Assets estáticos de Next (/_next/static): cache-first (inmutables).
  * - Resto GET same-origin: stale-while-revalidate.
  */
-const VERSION = "ds-studio-v2";
+const VERSION = "ds-studio-v3";
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGES_CACHE = `${VERSION}-pages`;
-const PRECACHE = [
-  "/offline",
-  "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-];
+// El manifiesto NO se precachea: se arma por pedido según la barbería elegida.
+const PRECACHE = ["/offline", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

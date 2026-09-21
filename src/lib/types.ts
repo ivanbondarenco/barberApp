@@ -1,4 +1,9 @@
-export type Role = "cliente" | "admin";
+export type Role = "cliente" | "barbero" | "admin";
+
+/** Roles que operan el local. `admin` es dueño: además maneja caja, catálogo y equipo. */
+export type StaffRole = Extract<Role, "barbero" | "admin">;
+
+export const isStaff = (role: Role): role is StaffRole => role === "admin" || role === "barbero";
 
 /** "credito": seña cubierta con crédito a favor por una cancelación en término. */
 export type PaymentMethod = "mercadopago" | "transferencia" | "efectivo" | "credito";
@@ -6,11 +11,23 @@ export type PaymentMethod = "mercadopago" | "transferencia" | "efectivo" | "cred
 /** Cómo elige el cliente abonar la seña al reservar. */
 export type DepositChoice = "digital" | "efectivo" | "credito";
 
+/** Una barbería. Cada una tiene sus datos, su equipo y su plata, aisladas del resto. */
+export interface Shop {
+  id: string;
+  /** URL pública del local: /b/<slug> */
+  slug: string;
+  name: string;
+}
+
 export interface Session {
   role: Role;
   name: string;
   identifier: string;
   clientId?: string;
+  /** Solo rol `barbero`: sillón que opera. Acota su agenda y sus cobros. */
+  barberId?: string;
+  /** Barbería a la que pertenece la sesión. */
+  shop: Shop;
 }
 
 export interface ClientProfile {
@@ -22,7 +39,6 @@ export interface ClientProfile {
   notifications: {
     reminder24h: boolean;
     whatsapp: boolean;
-    promos: boolean;
   };
   /** Crédito a favor (ARS) generado por cancelaciones en término. */
   credit: number;
@@ -39,10 +55,16 @@ export interface Barber {
   initials: string;
   title: string;
   chair: number;
-  rating: number;
-  reviews: number;
+  /** Promedio de las reseñas reales de sus turnos. Lo deriva el servidor; no se guarda. */
+  rating?: number;
+  /** Cantidad de reseñas recibidas. Derivado, igual que `rating`. */
+  reviews?: number;
   phone?: string;
   active: boolean;
+  /** true si el barbero tiene cuenta para entrar a la app (lo informa el servidor). */
+  hasAccount?: boolean;
+  /** Usuario con el que entra (email o celular), informado por el servidor. */
+  accountIdentifier?: string;
 }
 
 export type ServiceCategory = "corte" | "barba" | "combo" | "tratamiento";
@@ -82,13 +104,24 @@ export interface AppointmentProduct {
   qty: number;
 }
 
-export type AppointmentStatus = "confirmado" | "completado" | "cancelado";
+export type AppointmentStatus = "confirmado" | "completado" | "cancelado" | "no_show";
+
+/**
+ * `pendiente`: todavía no entró la plata.
+ * `en_revision`: el cliente declaró una transferencia; la confirma el staff al ver el comprobante.
+ * `abonada`: confirmada por el webhook de Mercado Pago, por el staff o por crédito a favor.
+ */
+export type DepositStatus = "pendiente" | "en_revision" | "abonada";
 
 export interface Deposit {
   amount: number;
-  status: "abonada" | "pendiente";
+  status: DepositStatus;
   method: PaymentMethod;
   paidAt?: string;
+  /** Momento en que el cliente declaró la transferencia (status `en_revision`). */
+  declaredAt?: string;
+  /** Id del pago en la pasarela o número de comprobante de la transferencia. */
+  reference?: string;
 }
 
 export interface BalancePayment {
@@ -123,6 +156,21 @@ export interface Appointment {
   cancelledAt?: string;
   /** Seña devuelta como crédito a favor al cancelar. */
   creditIssued?: number;
+  /**
+   * Reserva digital sin pagar: retiene el horario hasta este instante (ISO).
+   * Vencido, el turno se libera solo. Se borra al acreditarse la seña.
+   */
+  holdUntil?: string;
+  /** El horario se liberó porque venció el plazo de pago. */
+  holdExpired?: boolean;
+  /** El cliente no se presentó: la seña queda para el local. */
+  noShowAt?: string;
+  /** Seña retenida por ausencia (no vuelve como crédito). */
+  depositForfeited?: number;
+  /** Momento en que se envió el recordatorio previo al turno. */
+  reminderSentAt?: string;
+  /** Estrellas que le puso el cliente al turno terminado (1 a 5). Se califica una sola vez. */
+  rating?: number;
 }
 
 export interface TimeBlock {
@@ -137,6 +185,19 @@ export interface TimeBlock {
 export interface DepositSettings {
   /** Seña presencial en efectivo habilitada. */
   allowCash: boolean;
+  /** Porcentaje del servicio que se pide como seña (0 = sin seña). Lo decide cada barbería. */
+  rate: number;
+}
+
+/**
+ * Qué integraciones tiene enchufadas esta barbería. Se deriva en el servidor y las
+ * credenciales nunca salen de él: acá solo viaja si cada cosa está disponible o no.
+ */
+export interface IntegrationSettings {
+  /** Hay credenciales de Mercado Pago: el cliente puede pagar la seña online. */
+  mercadopagoReady: boolean;
+  /** Hay credenciales de WhatsApp: se pueden enviar códigos de verificación. */
+  whatsappReady: boolean;
 }
 
 export interface CashRegister {

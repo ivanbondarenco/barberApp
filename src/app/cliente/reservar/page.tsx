@@ -17,7 +17,7 @@ import { ease, listItem, spring, stepSlide } from "@/lib/motion";
 import { CASH_DEPOSIT_DEADLINE_HOURS, splitDeposit } from "@/lib/pricing";
 import { cashDepositDeadline } from "@/lib/schedule";
 import type { DepositChoice, PaymentMethod } from "@/lib/types";
-import { bookAppointment } from "@/store/actions";
+import { bookAppointment, startCheckout } from "@/store/actions";
 import { useAppStore, useCurrentClient } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 
@@ -39,6 +39,7 @@ function Reservar() {
   const allServices = useAppStore((s) => s.services);
   const allBarbers = useAppStore((s) => s.barbers);
   const allowCash = useAppStore((s) => s.depositSettings.allowCash);
+  const depositRate = useAppStore((s) => s.depositSettings.rate);
   const hours = useAppStore((s) => s.businessHours);
 
   const services = useMemo(() => allServices.filter((s) => s.active), [allServices]);
@@ -60,7 +61,7 @@ function Reservar() {
 
   const service = services.find((s) => s.id === serviceId);
   const barber = barbers.find((b) => b.id === barberId) ?? barbers[0];
-  const split = service ? splitDeposit(service.price) : null;
+  const split = service ? splitDeposit(service.price, depositRate) : null;
 
   const deadline = date && time ? cashDepositDeadline(date, time, hours, CASH_DEPOSIT_DEADLINE_HOURS) : null;
   const cashAvailable = allowCash && (!deadline || deadline.getTime() > Date.now());
@@ -76,7 +77,11 @@ function Reservar() {
   const onDate = useCallback((d: string) => setDate(d), []);
   const onTime = useCallback((t: string | null) => setTime(t), []);
 
-  const finalize = async (method: PaymentMethod, paid: boolean) => {
+  /**
+   * Crea el turno y, según el medio, sigue el camino que corresponda.
+   * El turno nace con la seña pendiente: la acredita el webhook de la pasarela o el staff.
+   */
+  const finalize = async (method: PaymentMethod) => {
     if (!service || !date || !time || !client) return;
     setSaving(true);
     const result = await bookAppointment({
@@ -88,11 +93,10 @@ function Reservar() {
       time,
       notes,
       depositMethod: method,
-      depositPaid: paid,
     });
-    setSaving(false);
-    setCheckoutOpen(false);
     if (!result.ok) {
+      setSaving(false);
+      setCheckoutOpen(false);
       toast(result.error, "error");
       if (result.error.includes("horario")) {
         setTime(null);
@@ -100,13 +104,34 @@ function Reservar() {
       }
       return;
     }
-    router.push(`/cliente/pago/${paid ? "exito" : "pendiente"}?turno=${result.id}`, { transitionTypes: [...NAV.forward] });
+
+    // Mercado Pago: se sale de la app al checkout. Vuelve por las back_urls.
+    if (method === "mercadopago") {
+      const checkout = await startCheckout(result.id);
+      if (checkout.ok && checkout.initPoint) {
+        window.location.href = checkout.initPoint;
+        return;
+      }
+      setSaving(false);
+      setCheckoutOpen(false);
+      toast(checkout.ok ? "No pudimos abrir el pago" : checkout.error, "error");
+      router.push(`/cliente/turno/${result.id}`, { transitionTypes: [...NAV.forward] });
+      return;
+    }
+
+    setSaving(false);
+    setCheckoutOpen(false);
+    // Queda confirmado al instante si no hay seña que cobrar o si la cubrió el crédito.
+    const state = depositRate === 0 || method === "credito" ? "exito" : "pendiente";
+    router.push(`/cliente/pago/${state}?turno=${result.id}`, { transitionTypes: [...NAV.forward] });
   };
 
   const confirm = () => {
-    if (effective === "digital") setCheckoutOpen(true);
-    else if (effective === "credito") void finalize("credito", true);
-    else void finalize("efectivo", false);
+    // Sin seña no hay nada que cobrar por adelantado: se reserva y listo.
+    if (depositRate === 0) void finalize("efectivo");
+    else if (effective === "digital") setCheckoutOpen(true);
+    else if (effective === "credito") void finalize("credito");
+    else void finalize("efectivo");
   };
 
   if (!services.length || !barber) {
@@ -235,8 +260,13 @@ function Reservar() {
                   <SummaryRow label="Barbero" value={barber.name} onEdit={() => setBarberSheet(true)} />
                 </div>
 
+                {depositRate === 0 ? (
+                  <p className="rounded-2xl bg-surface-lowest px-4 py-3 text-[13px] text-secondary shadow-xs">
+                    Este local no pide seña: confirmás el turno y abonás {money(service.price)} en el sillón.
+                  </p>
+                ) : (
                 <div>
-                  <p className="section-title mb-2 px-1">Seña del 50%</p>
+                  <p className="section-title mb-2 px-1">Seña del {Math.round(depositRate * 100)}%</p>
                   <div className="flex flex-col gap-2" role="radiogroup" aria-label="Cómo pagás la seña">
                     <PayOption active={effective === "digital"} onClick={() => setChoice("digital")} icon={CreditCard} title="Pagar online" detail="Mercado Pago o transferencia" />
                     {allowCash && (
@@ -261,6 +291,7 @@ function Reservar() {
                     )}
                   </div>
                 </div>
+                )}
 
                 <div>
                   <button type="button" onClick={() => setNotesOpen((v) => !v)} className="text-link px-1 text-sm">
@@ -316,7 +347,15 @@ function Reservar() {
               </button>
             ) : (
               <button type="button" disabled={saving} onClick={confirm} className="tap btn-primary w-auto px-6">
-                {saving ? "Reservando…" : effective === "digital" ? "Pagar seña" : effective === "credito" ? "Usar crédito" : "Reservar"}
+                {saving
+                  ? "Reservando…"
+                  : depositRate === 0
+                    ? "Reservar turno"
+                    : effective === "digital"
+                      ? "Pagar seña"
+                      : effective === "credito"
+                        ? "Usar crédito"
+                        : "Reservar"}
               </button>
             )}
           </m.div>
@@ -345,7 +384,12 @@ function Reservar() {
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{b.name}</span>
                   <span className="flex items-center gap-1 text-[13px] text-secondary">
-                    <Star size={12} className="fill-primary text-primary" aria-hidden /> {b.rating.toFixed(1)} · {b.title}
+                    {b.reviews ? (
+                      <>
+                        <Star size={12} className="fill-primary text-primary" aria-hidden /> {b.rating?.toFixed(1)} ·{" "}
+                      </>
+                    ) : null}
+                    {b.title}
                   </span>
                 </span>
                 {b.id === barberId && <Check size={20} className="text-primary" aria-hidden />}
@@ -361,11 +405,7 @@ function Reservar() {
           onClose={() => setCheckoutOpen(false)}
           amount={split.deposit}
           description={`${service.name} · ${dayShort(date)} ${dayNumber(date)} · ${time} hs`}
-          onApproved={(method) => finalize(method, true)}
-          onRejected={() => {
-            setCheckoutOpen(false);
-            router.push(`/cliente/pago/error?servicio=${service.id}&barbero=${barberId}`, { transitionTypes: [...NAV.forward] });
-          }}
+          onConfirm={(method) => finalize(method)}
         />
       )}
     </Page>

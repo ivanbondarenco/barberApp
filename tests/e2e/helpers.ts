@@ -3,13 +3,41 @@ import { expect, request as playwrightRequest, type APIRequestContext, type Brow
 
 export const CLIENT = { phone: "+54 9 11 5555 0192", pin: "1234", name: "Tomás" };
 export const ADMIN = { email: "admin@dsstudio.com.ar", pin: "1234" };
-export const OTP = "123456";
+/**
+ * Los códigos ahora son aleatorios y se mandan por WhatsApp. En los tests el servidor corre
+ * con OTP_DEBUG=1 y devuelve el código en la respuesta: `captureOtp` lo lee de ahí.
+ */
+/** Barbería de la demo. Es a la que apuntan todos los tests salvo los de multi-barbería. */
+export const SHOP_SLUG = "ds-studio";
 
 const BASE_URL = "http://localhost:3210";
 
-/** Contexto de API autenticado como staff. */
-export async function adminApi(): Promise<APIRequestContext> {
+/**
+ * Dispara la acción que pide un código y devuelve el que emitió el servidor.
+ * Lee la respuesta de red en vez de tocar la UI, así no hace falta exponer el código en pantalla.
+ */
+export async function captureOtp(page: Page, urlPart: string, action: () => Promise<unknown>): Promise<string> {
+  const [res] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes(urlPart) && r.request().method() === "POST"),
+    action(),
+  ]);
+  const body = (await res.json()) as { code?: string; error?: string };
+  expect(body.code, `el servidor debía emitir un código (${body.error ?? "sin error"})`).toBeTruthy();
+  return body.code!;
+}
+
+/**
+ * Fija la barbería del contexto, como haría un cliente que abre el link del local.
+ * Con más de una barbería publicada, sin esto no hay contra cuál autenticar.
+ */
+export async function openShop(page: Page, slug = SHOP_SLUG) {
+  await page.goto(`/b/${slug}`);
+}
+
+/** Contexto de API autenticado como staff de la barbería indicada. */
+export async function adminApi(slug = SHOP_SLUG): Promise<APIRequestContext> {
   const api = await playwrightRequest.newContext({ baseURL: BASE_URL });
+  await api.get(`/b/${slug}`);
   const res = await api.post("/api/auth/login", { data: { role: "admin", identifier: ADMIN.email, pin: ADMIN.pin } });
   expect(res.ok()).toBeTruthy();
   return api;
@@ -29,6 +57,7 @@ export async function runCommand(api: APIRequestContext, command: Record<string,
 }
 
 export async function loginAsClient(page: Page, phone = CLIENT.phone, pin = CLIENT.pin) {
+  await openShop(page);
   await page.goto("/auth/login");
   await page.getByLabel("Celular o email").fill(phone);
   await page.getByLabel("PIN", { exact: true }).fill(pin);
@@ -37,6 +66,7 @@ export async function loginAsClient(page: Page, phone = CLIENT.phone, pin = CLIE
 }
 
 export async function loginAsAdmin(page: Page) {
+  await openShop(page);
   await page.goto("/auth/login");
   await page.getByRole("tab", { name: "Soy barbero" }).click();
   await page.getByLabel("Email").fill(ADMIN.email);
@@ -63,27 +93,39 @@ export async function pageState(page: Page) {
   const res = await page.request.get("/api/state");
   return (await res.json()) as {
     version: number;
-    session: { role: string; name: string; clientId?: string } | null;
+    session: { role: string; name: string; clientId?: string; shop: { id: string; slug: string; name: string } } | null;
     state: {
       services: { id: string; name: string; price: number; active: boolean }[];
       products: { id: string; name: string; stock: number }[];
       barbers: { id: string; name: string }[];
       clients: { id: string; name: string; phone: string; credit: number }[];
-      appointments: { id: string; clientId?: string; clientName: string; status: string; time: string; date: string; deposit: { status: string; method: string }; products: unknown[] }[];
+      appointments: { id: string; clientId?: string; clientName: string; status: string; time: string; date: string; deposit: { status: string; method: string }; products: unknown[]; reminderSentAt?: string; holdUntil?: string; rating?: number; barberId: string }[];
       blocks: { id: string; reason: string }[];
       cashRegister: { open: boolean };
       businessHours: { closed: boolean; open: string; close: string }[];
+      businessInfo: { name: string; address: string; whatsapp: string };
+      depositSettings: { allowCash: boolean; rate: number };
+      integrations: { mercadopagoReady: boolean; whatsappReady: boolean };
     };
+    shop?: { id: string; slug: string; name: string } | null;
+    shops?: { id: string; slug: string; name: string }[];
   };
 }
 
-/** Elige el primer horario libre visible en un selector de turnos. */
+/**
+ * Elige el primer horario libre visible y devuelve el que realmente quedó seleccionado.
+ *
+ * La lista se re-renderiza cuando llega la sincronización con el servidor (un horario que se
+ * libera o se toma), así que leer el texto ANTES de hacer clic devolvía a veces un horario
+ * distinto del que terminaba marcado.
+ */
 export async function pickFirstSlot(scope: Page | ReturnType<Page["locator"]>) {
-  const slots = scope.getByRole("radiogroup", { name: "Horario" }).getByRole("radio");
-  await expect(slots.first()).toBeVisible();
-  const time = (await slots.first().textContent())?.trim() ?? "";
-  await slots.first().click();
-  return time;
+  const group = scope.getByRole("radiogroup", { name: "Horario" });
+  await expect(group.getByRole("radio").first()).toBeVisible();
+  await group.getByRole("radio").first().click();
+  const selected = group.getByRole("radio", { checked: true });
+  await expect(selected).toBeVisible();
+  return (await selected.textContent())?.trim() ?? "";
 }
 
 /** Espera a que desaparezcan los avisos y animaciones de entrada. */

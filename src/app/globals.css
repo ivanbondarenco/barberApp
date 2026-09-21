@@ -30,6 +30,10 @@
   --color-mint: #e3f7ee;
   --color-mint-ink: #0f7a55;
 
+  /* Estados a la espera de una confirmación humana: seña transferida sin verificar. */
+  --color-amber-container: #fdeed3;
+  --color-amber-ink: #8a5a00;
+
   --color-error: #ba1a1a;
   --color-error-container: #ffdad6;
 

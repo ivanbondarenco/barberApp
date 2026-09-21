@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  BellRing,
   ChevronRight,
   CircleHelp,
   CloudOff,
@@ -44,11 +45,19 @@ const CLIENT_LINKS: MenuLink[] = [
   { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
 
-const ADMIN_LINKS: MenuLink[] = [
+const OWNER_LINKS: MenuLink[] = [
   { href: "/admin/clientes", label: "Clientes", icon: Contact },
+  { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
   { href: "/admin/equipo", label: "Equipo", icon: Users },
   { href: "/admin/finanzas/cierre", label: "Cierre de caja", icon: Receipt },
   { href: "/admin/configuracion", label: "Configuración", icon: Settings },
+];
+
+/** El barbero no maneja caja, equipo ni configuración del local. */
+const BARBER_LINKS: MenuLink[] = [
+  { href: "/admin/clientes", label: "Clientes", icon: Contact },
+  { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
+  { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
 
 export function AppHeader({ title, backHref, right }: AppHeaderProps) {
@@ -58,7 +67,7 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
   const logout = useAppStore((s) => s.logout);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const links = session?.role === "admin" ? ADMIN_LINKS : CLIENT_LINKS;
+  const links = session?.role === "admin" ? OWNER_LINKS : session?.role === "barbero" ? BARBER_LINKS : CLIENT_LINKS;
 
   return (
     <header
@@ -101,7 +110,7 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         title={session?.name ?? "Mi cuenta"}
-        subtitle={session?.role === "admin" ? "Barbero / Admin" : session?.identifier}
+        subtitle={session?.role === "admin" ? "Dueño del local" : session?.role === "barbero" ? "Barbero" : session?.identifier}
       >
         <nav className="flex flex-col gap-3 pb-2" aria-label="Menú de cuenta">
           <ul className="overflow-hidden rounded-2xl bg-surface-low">

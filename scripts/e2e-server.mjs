@@ -9,7 +9,16 @@ const dataDir = path.join(root, ".test-data");
 fs.rmSync(dataDir, { recursive: true, force: true });
 fs.mkdirSync(dataDir, { recursive: true });
 
-const env = { ...process.env, DATABASE_PATH: path.join(dataDir, "e2e.db"), NEXT_TELEMETRY_DISABLED: "1" };
+// OTP_DEBUG hace que el servidor devuelva el código en la respuesta en vez de mandarlo por
+// WhatsApp: es la única forma de probar el registro y la recuperación sin una cuenta de Meta.
+const env = {
+  ...process.env,
+  DATABASE_PATH: path.join(dataDir, "e2e.db"),
+  NEXT_TELEMETRY_DISABLED: "1",
+  OTP_DEBUG: "1",
+  // Los tests parten de la barbería de demostración sembrada.
+  SEED_DEMO: "1",
+};
 const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
 
 if (process.env.E2E_SKIP_BUILD !== "1") {

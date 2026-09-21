@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Trash2 } from "lucide-react";
+import { KeyRound, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -11,8 +11,9 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { initials, uid } from "@/lib/format";
 import type { Barber } from "@/lib/types";
-import { deleteBarber, saveBarber } from "@/store/actions";
+import { deleteBarber, saveBarber, saveStaffAccount } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
+import { toast } from "@/store/useToast";
 
 const schema = z.object({
   name: z.string().trim().min(3, "Ingresá el nombre"),
@@ -20,6 +21,10 @@ const schema = z.object({
   chair: z.string().regex(/^\d{1,2}$/, "Número de sillón"),
   phone: z.string().trim(),
   active: z.boolean(),
+  /** Usuario con el que entra a la app. Vacío = sin acceso. */
+  accountIdentifier: z.string().trim(),
+  /** Obligatorio solo al darle acceso por primera vez. */
+  accountPin: z.string().trim(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -44,27 +49,46 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
       chair: String(barber?.chair ?? Math.max(0, ...barbers.map((b) => b.chair)) + 1),
       phone: barber?.phone ?? "",
       active: barber?.active ?? true,
+      accountIdentifier: barber?.accountIdentifier ?? "",
+      accountPin: "",
     });
   }, [open, barber]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = useWatch({ control, name: "active" });
 
   const onSubmit = async (v: Values) => {
+    const id = barber?.id ?? uid("b");
     const result = await saveBarber(
       {
-        id: barber?.id ?? uid("b"),
+        id,
         name: v.name,
         title: v.title,
         chair: Number(v.chair),
         phone: v.phone || undefined,
         initials: initials(v.name),
-        rating: barber?.rating ?? 5,
-        reviews: barber?.reviews ?? 0,
         active: v.active,
       },
       isNew,
     );
-    if (result.ok) onClose();
+    if (!result.ok) return;
+
+    // El acceso vive aparte del sillón: se guarda solo si cambió algo.
+    const identifierChanged = v.accountIdentifier !== (barber?.accountIdentifier ?? "");
+    if (identifierChanged || v.accountPin) {
+      if (v.accountIdentifier && !barber?.hasAccount && v.accountPin.length !== 4) {
+        return toast("Elegí un PIN inicial de 4 dígitos para su acceso", "error");
+      }
+      if (v.accountPin && v.accountPin.length !== 4) {
+        return toast("El PIN tiene 4 dígitos", "error");
+      }
+      const account = await saveStaffAccount({
+        barberId: id,
+        identifier: v.accountIdentifier,
+        pin: v.accountPin || undefined,
+      });
+      if (!account.ok) return;
+    }
+    onClose();
   };
 
   return (
@@ -101,6 +125,39 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
             </span>
             <Switch checked={!!active} onChange={(v) => setValue("active", v)} label="Recibe reservas" />
           </label>
+          <fieldset className="mt-1 flex flex-col gap-3 rounded-2xl bg-surface-low p-3">
+            <legend className="sr-only">Acceso a la app</legend>
+            <p className="flex items-center gap-1.5 text-sm font-medium">
+              <KeyRound size={15} className="text-primary" aria-hidden /> Acceso a la app
+            </p>
+            <p className="-mt-1 text-xs text-secondary">
+              Con cuenta propia ve y cobra solo su agenda. La caja, el catálogo y la configuración quedan para vos.
+            </p>
+            <Field label="Email o celular" htmlFor="bf-account" error={errors.accountIdentifier?.message}>
+              <input
+                id="bf-account"
+                className="field bg-surface-lowest"
+                autoComplete="off"
+                placeholder="Dejalo vacío para quitarle el acceso"
+                {...register("accountIdentifier")}
+              />
+            </Field>
+            <Field label={barber?.hasAccount ? "PIN nuevo (opcional)" : "PIN inicial"} htmlFor="bf-pin" error={errors.accountPin?.message}>
+              <input
+                id="bf-pin"
+                inputMode="numeric"
+                maxLength={4}
+                autoComplete="off"
+                className="field bg-surface-lowest tracking-[0.4em]"
+                placeholder="••••"
+                {...register("accountPin")}
+              />
+            </Field>
+            {barber?.hasAccount && (
+              <p className="text-xs text-secondary">Al cambiarle el PIN se cierran sus sesiones abiertas.</p>
+            )}
+          </fieldset>
+
           {!isNew && (
             <button type="button" onClick={() => setConfirmDelete(true)} className="tap btn-destructive mt-1">
               <Trash2 size={16} /> Eliminar del equipo

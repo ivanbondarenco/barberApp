@@ -25,6 +25,31 @@ export function openingHours(
   return { open: day.open, close: day.close };
 }
 
+/**
+ * Primer día abierto desde `iso` (inclusive).
+ *
+ * Sirve para que la agenda no se abra en un día cerrado: un domingo, el barbero quiere ver la
+ * semana que viene, no la que terminó.
+ */
+export function firstOpenDay(iso: string, hours?: BusinessHours): string {
+  let day = iso;
+  for (let i = 0; i < 14; i++) {
+    if (openingHours(day, hours)) return day;
+    day = addDays(day, 1);
+  }
+  return iso;
+}
+
+/** Último día abierto hasta `iso` (inclusive), hacia atrás. */
+export function lastOpenDay(iso: string, hours?: BusinessHours): string {
+  let day = iso;
+  for (let i = 0; i < 14; i++) {
+    if (openingHours(day, hours)) return day;
+    day = addDays(day, -1);
+  }
+  return iso;
+}
+
 export type Shift = "manana" | "tarde";
 
 export function shiftOf(time: string): Shift {
@@ -70,6 +95,7 @@ export function buildSlots({
   const isToday = date === todayISO();
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
+  const nowISO = now.toISOString();
   const busy = [
     ...appointments
       .filter(
@@ -77,7 +103,9 @@ export function buildSlots({
           a.date === date &&
           a.barberId === barberId &&
           a.status !== "cancelado" &&
-          a.id !== excludeAppointmentId,
+          a.id !== excludeAppointmentId &&
+          // Reserva digital cuyo plazo de pago venció: el horario ya está libre.
+          !(a.holdUntil !== undefined && a.holdUntil <= nowISO),
       )
       .map((a) => [timeToMinutes(a.time), timeToMinutes(a.time) + a.durationMin] as const),
     ...blocks

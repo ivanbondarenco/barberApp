@@ -26,6 +26,7 @@ type Tab = "servicios" | "productos" | "sena";
 export default function CatalogoPage() {
   const services = useAppStore((s) => s.services);
   const products = useAppStore((s) => s.products);
+  const depositRate = useAppStore((s) => s.depositSettings.rate);
   const appointments = useAppStore((s) => s.appointments);
   const [tab, setTab] = useState<Tab>("servicios");
   const [serviceSheet, setServiceSheet] = useState<{ open: boolean; service?: Service }>({ open: false });
@@ -76,7 +77,7 @@ export default function CatalogoPage() {
                               {s.featured && <Star size={13} className="shrink-0 fill-primary text-primary" aria-label="Destacado" />}
                             </span>
                             <span className="block text-[13px] text-secondary tabular-nums">
-                              {money(s.price)} · {s.durationMin} min · seña {money(splitDeposit(s.price).deposit)}
+                              {money(s.price)} · {s.durationMin} min{depositRate > 0 ? ` · seña ${money(splitDeposit(s.price, depositRate).deposit)}` : ""}
                             </span>
                           </span>
                         </button>
@@ -132,7 +133,7 @@ export default function CatalogoPage() {
                   {services.map((s) => (
                     <li key={s.id} className="row">
                       <span className="min-w-0 flex-1 truncate text-[15px]">{s.name}</span>
-                      <span className="text-[15px] font-semibold tabular-nums text-primary">{money(splitDeposit(s.price).deposit)}</span>
+                      <span className="text-[15px] font-semibold tabular-nums text-primary">{money(splitDeposit(s.price, depositRate).deposit)}</span>
                     </li>
                   ))}
                 </ul>

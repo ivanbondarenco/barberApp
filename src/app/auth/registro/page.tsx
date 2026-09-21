@@ -69,8 +69,8 @@ export default function RegistroPage() {
             {busy ? "Creando cuenta…" : "Verificar y crear cuenta"}
           </button>
         ) : (
-          <button type="submit" form="register-form" className="tap btn-primary">
-            Continuar
+          <button type="submit" form="register-form" disabled={busy} className="tap btn-primary">
+            {busy ? "Enviando código…" : "Continuar"}
           </button>
         )
       }
@@ -86,7 +86,13 @@ export default function RegistroPage() {
               animate="center"
               exit="exit"
               id="register-form"
-              onSubmit={handleSubmit((v) => {
+              onSubmit={handleSubmit(async (v) => {
+                // Pide el código al servidor: recién si se pudo enviar se avanza de paso.
+                setBusy(true);
+                setError(null);
+                const sent = await registerAccount({ name: v.name, phone: v.phone, email: v.email, pin: v.pin });
+                setBusy(false);
+                if (!sent.ok) return setError(sent.error);
                 setData(v);
                 toast("Te enviamos un código por WhatsApp", "info");
               })}
@@ -121,6 +127,11 @@ export default function RegistroPage() {
                 </span>
               </label>
               {errors.accept && <p className="field-error -mt-2">{errors.accept.message}</p>}
+              {error && (
+                <p role="alert" className="rounded-2xl bg-error-container px-4 py-3 text-[13px] text-error">
+                  {error}
+                </p>
+              )}
             </m.form>
           ) : (
             <m.div key="codigo" custom={1} variants={stepSlide} initial="enter" animate="center" exit="exit" className="flex flex-col gap-4">

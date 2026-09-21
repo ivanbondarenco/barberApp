@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { ADMIN, CLIENT, loginAsAdmin, loginAsClient, OTP, pageState, resetData } from "./helpers";
+import { expect, test, type APIRequestContext } from "@playwright/test";
+import { ADMIN, captureOtp, CLIENT, SHOP_SLUG, loginAsAdmin, loginAsClient, openShop, pageState, resetData } from "./helpers";
 
 test.beforeAll(resetData);
 
@@ -18,6 +18,7 @@ test.describe("Ingreso", () => {
   });
 
   test("PIN incorrecto muestra un error claro y no inicia sesión", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/login");
     await page.getByLabel("Celular o email").fill(CLIENT.phone);
     await page.getByLabel("PIN", { exact: true }).fill("0000");
@@ -28,6 +29,7 @@ test.describe("Ingreso", () => {
   });
 
   test("valida el formulario antes de enviar", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/login");
     await page.getByRole("button", { name: "Ingresar" }).click();
     await expect(page.getByText("Ingresá tu celular o email")).toBeVisible();
@@ -35,6 +37,7 @@ test.describe("Ingreso", () => {
   });
 
   test("una cuenta de cliente no entra como barbero", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/login");
     await page.getByRole("tab", { name: "Soy barbero" }).click();
     await page.getByLabel("Email").fill(CLIENT.phone);
@@ -54,6 +57,7 @@ test.describe("Ingreso", () => {
   });
 
   test("mostrar y ocultar el PIN", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/login");
     const pin = page.getByLabel("PIN", { exact: true });
     await expect(pin).toHaveAttribute("type", "password");
@@ -99,6 +103,7 @@ test.describe("Sesión y rutas protegidas", () => {
 
 test.describe("Registro, código y recuperación", () => {
   test("crea una cuenta nueva verificando el código", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/registro");
     await page.getByRole("button", { name: "Continuar" }).click();
     await expect(page.getByText("Ingresá nombre y apellido")).toBeVisible();
@@ -108,13 +113,15 @@ test.describe("Registro, código y recuperación", () => {
     await page.getByLabel("PIN", { exact: true }).fill("4826");
     await page.getByLabel("Repetir PIN").fill("4826");
     await page.getByLabel(/Acepto las/).check();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    const code = await captureOtp(page, "/api/auth/register", () =>
+      page.getByRole("button", { name: "Continuar" }).click(),
+    );
 
     await page.getByLabel("Código").fill("000000");
     await page.getByRole("button", { name: "Verificar y crear cuenta" }).click();
-    await expect(page.getByText("Código de verificación incorrecto")).toBeVisible();
+    await expect(page.getByText("Código incorrecto")).toBeVisible();
 
-    await page.getByLabel("Código").fill(OTP);
+    await page.getByLabel("Código").fill(code);
     await page.getByRole("button", { name: "Verificar y crear cuenta" }).click();
     await page.waitForURL("**/cliente/reservar");
     const { session, state } = await pageState(page);
@@ -123,28 +130,83 @@ test.describe("Registro, código y recuperación", () => {
   });
 
   test("no permite registrar un celular que ya tiene cuenta", async ({ request }) => {
+    await request.get(`/b/${SHOP_SLUG}`);
+    // Se rechaza antes de gastar un envío de WhatsApp, así que ni siquiera pide código.
     const res = await request.post("/api/auth/register", {
-      data: { name: "Otro Tomás", phone: CLIENT.phone, pin: "5678", code: OTP },
+      data: { name: "Otro Tomás", phone: CLIENT.phone, pin: "5678" },
     });
     expect(res.status()).toBe(409);
   });
 
+  /** Pide un código por API y lo devuelve (el servidor de los tests corre con OTP_DEBUG). */
+  async function requestOtp(api: APIRequestContext, phone: string): Promise<string> {
+    const res = await api.post("/api/auth/otp", { data: { phone } });
+    const body = (await res.json()) as { code?: string; error?: string };
+    expect(body.code, `el servidor debía emitir un código (${body.error ?? "sin error"})`).toBeTruthy();
+    return body.code!;
+  }
+
+  test("un código no sirve para otro trámite ni después de usarse", async ({ playwright }) => {
+    const api = await playwright.request.newContext({ baseURL: "http://localhost:3210" });
+    await api.get(`/b/${SHOP_SLUG}`);
+
+    // Código pedido para "acceso": no vale para recuperar el PIN.
+    const acceso = await requestOtp(api, CLIENT.phone);
+    const cruzado = await api.post("/api/auth/recover", { data: { identifier: CLIENT.phone, code: acceso } });
+    expect(cruzado.status()).toBe(401);
+
+    // Entra una vez…
+    expect((await api.post("/api/auth/otp", { data: { phone: CLIENT.phone, code: acceso } })).ok()).toBeTruthy();
+    // …y ya no se puede reusar.
+    expect((await api.post("/api/auth/otp", { data: { phone: CLIENT.phone, code: acceso } })).status()).toBe(401);
+    await api.dispose();
+  });
+
+  test("un código equivocado no entra y se bloquea tras varios intentos", async ({ playwright }) => {
+    const api = await playwright.request.newContext({ baseURL: "http://localhost:3210" });
+    await api.get(`/b/${SHOP_SLUG}`);
+    // Otro celular, para no chocar con el cooldown del test anterior.
+    const phone = "+54 9 11 4444 5555";
+    const alta = { name: "Fuerza Bruta", phone, pin: "1357" };
+    // Un solo pedido: pedir otro código antes del minuto está bloqueado a propósito.
+    const emitido = (await (await api.post("/api/auth/register", { data: alta })).json()) as { code?: string };
+    expect(emitido.code).toBeTruthy();
+
+    for (let i = 0; i < 5; i++) {
+      const res = await api.post("/api/auth/register", { data: { ...alta, code: "000000" } });
+      expect(res.status()).toBe(401);
+    }
+    // Agotados los intentos, ni el código bueno sirve: hay que pedir otro.
+    const blocked = await api.post("/api/auth/register", { data: { ...alta, code: emitido.code } });
+    expect([401, 429]).toContain(blocked.status());
+
+    // Y el cooldown impide pedir uno nuevo enseguida.
+    expect((await api.post("/api/auth/register", { data: alta })).status()).toBe(429);
+    await api.dispose();
+  });
+
   test("ingresa con código por WhatsApp", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/login");
     await page.getByRole("button", { name: "Entrar con código" }).click();
     const dialog = page.getByRole("dialog", { name: "Entrar con código" });
     await dialog.getByLabel("Celular").fill(CLIENT.phone);
-    await dialog.getByRole("button", { name: "Enviar código" }).click();
-    await dialog.getByLabel(/Código enviado/).fill(OTP);
+    const code = await captureOtp(page, "/api/auth/otp", () =>
+      dialog.getByRole("button", { name: "Enviar código" }).click(),
+    );
+    await dialog.getByLabel(/Código enviado/).fill(code);
     await dialog.getByRole("button", { name: "Verificar" }).click();
     await page.waitForURL("**/cliente/reservar");
   });
 
   test("recupera el PIN y entra con el nuevo", async ({ page }) => {
+    await openShop(page);
     await page.goto("/auth/recuperar");
     await page.getByLabel("Celular o email de tu cuenta").fill("+54 9 11 2222 3333");
-    await page.getByRole("button", { name: "Enviar código" }).click();
-    await page.getByLabel("Código").fill(OTP);
+    const code = await captureOtp(page, "/api/auth/recover", () =>
+      page.getByRole("button", { name: "Enviar código" }).click(),
+    );
+    await page.getByLabel("Código").fill(code);
     await page.getByRole("button", { name: "Verificar" }).click();
     await page.getByLabel("Nuevo PIN").fill("1234");
     await page.getByRole("button", { name: "Guardar PIN" }).click();

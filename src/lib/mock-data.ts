@@ -26,9 +26,6 @@ export const DEMO_ADMIN = {
   identifier: "admin@dsstudio.com.ar",
 };
 
-/** Código OTP de la demo (WhatsApp / SMS). */
-export const DEMO_OTP = "123456";
-
 export const seedBusinessInfo: BusinessInfo = {
   name: "D.S Studio Barbería",
   address: "Honduras 4820",
@@ -199,13 +196,13 @@ export function buildSeedClients(): ClientProfile[] {
       phone: DEMO_CLIENT.phone,
       email: DEMO_CLIENT.email,
       preferences: "Fade bien comprimido, largo arriba. Sin cera brillante.",
-      notifications: { reminder24h: true, whatsapp: true, promos: false },
+      notifications: { reminder24h: true, whatsapp: true },
       credit: 0,
       createdAt: created(180),
     },
     ...WALK_IN_CLIENTS.map((c, i) => ({
       ...c,
-      notifications: { reminder24h: true, whatsapp: true, promos: false },
+      notifications: { reminder24h: true, whatsapp: true },
       credit: 0,
       createdAt: created(120 - i * 15),
     })),

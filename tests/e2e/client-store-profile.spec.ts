@@ -46,12 +46,15 @@ test("edita sus datos y preferencias", async ({ page }) => {
 
 test("activa y desactiva avisos", async ({ page }) => {
   await page.goto("/cliente/perfil");
-  const promos = page.getByRole("switch", { name: "Novedades de la tienda" });
-  await expect(promos).toHaveAttribute("aria-checked", "false");
-  await promos.click();
-  await expect(promos).toHaveAttribute("aria-checked", "true");
+  const reminder = page.getByRole("switch", { name: /Recordatorio 24/ });
+  await expect(reminder).toHaveAttribute("aria-checked", "true");
+  await reminder.click();
+  await expect(reminder).toHaveAttribute("aria-checked", "false");
   await page.reload();
-  await expect(page.getByRole("switch", { name: "Novedades de la tienda" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("switch", { name: /Recordatorio 24/ })).toHaveAttribute("aria-checked", "false");
+
+  // El switch de promociones se quitó: no había nada detrás que las enviara.
+  await expect(page.getByRole("switch", { name: "Novedades de la tienda" })).toHaveCount(0);
 });
 
 test("cambia el PIN y vuelve a ingresar", async ({ page }) => {
@@ -78,7 +81,8 @@ test("cambia el PIN y vuelve a ingresar", async ({ page }) => {
 test("políticas y ayuda son accesibles desde el perfil", async ({ page }) => {
   await page.goto("/cliente/perfil");
   await page.getByRole("link", { name: /Políticas de seña/ }).click();
-  await expect(page.getByRole("heading", { name: "Seña fija del 50%" })).toBeVisible();
+  // El título refleja la seña que cobra ESTE local, no un 50% escrito a mano.
+  await expect(page.getByRole("heading", { name: "Seña del 50%" })).toBeVisible();
   await page.goto("/ayuda");
   await expect(page.getByRole("link", { name: /WhatsApp/ })).toHaveAttribute("href", /wa\.me/);
   await page.getByRole("button", { name: "¿Cómo reprogramo o cancelo?" }).click();

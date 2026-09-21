@@ -29,6 +29,8 @@ export default function LoginPage() {
   const router = useRouter();
   const hydrated = useHydrated();
   const session = useAppStore((s) => s.session);
+  const shop = useAppStore((s) => s.shop);
+  const shops = useAppStore((s) => s.shops);
   const synced = useAppStore((s) => s.synced);
   const login = useAppStore((s) => s.login);
   const [role, setRole] = useState<Role>("cliente");
@@ -41,8 +43,10 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (hydrated && synced && session) router.replace(homeFor(session.role));
-  }, [hydrated, synced, session, router]);
+    if (!hydrated || !synced) return;
+    if (session) router.replace(homeFor(session.role));
+    else if (!shop) router.replace("/");
+  }, [hydrated, synced, session, shop, router]);
 
   const {
     register,
@@ -65,8 +69,13 @@ export default function LoginPage() {
         <main className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto py-4">
           <m.div variants={fadeUp} initial="hidden" animate="show" className="mb-8 flex flex-col items-center text-center">
             <LogoSeal className="h-20 w-20 drop-shadow-md" />
-            <h1 className="mt-4 text-2xl font-bold tracking-tight">D.S Studio</h1>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight">{shop?.name ?? "Barbería"}</h1>
             <p className="text-[15px] text-secondary">Reservá tu turno en segundos</p>
+            {shops.length > 1 && (
+              <Link href="/" className="text-link mt-1 text-[13px]">
+                Cambiar de barbería
+              </Link>
+            )}
           </m.div>
 
           <Segmented
