@@ -18,6 +18,12 @@ const env = {
   OTP_DEBUG: "1",
   // Los tests parten de la barbería de demostración sembrada.
   SEED_DEMO: "1",
+  // Sin SMTP: los tests NO pueden mandar mails de verdad. Next carga .env.local solo,
+  // así que no alcanza con no configurarlo acá: hay que apagarlo explícitamente.
+  SMTP_HOST: "",
+  SMTP_USER: "",
+  SMTP_PASSWORD: "",
+  MAIL_FROM: "",
 };
 const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
 

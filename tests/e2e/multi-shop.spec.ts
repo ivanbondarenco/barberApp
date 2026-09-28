@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN, captureOtp, newDevice, openShop, pageState, resetData, SHOP_SLUG } from "./helpers";
+import { ADMIN, fillLogin, newDevice, openShop, pageState, resetData, SHOP_SLUG } from "./helpers";
 
 test.beforeAll(resetData);
 
 /**
- * Multi-barbería: cada local es una isla.
+ * Multi-barbería: cada local es una isla, y el cliente tiene una sola cuenta para todas.
  *
  * Este archivo deja una barbería nueva publicada, así que corre al final y el resto de los
  * tests fija la suya con `openShop` (el link /b/<slug>), igual que un cliente real.
@@ -14,19 +14,21 @@ const NUEVA = {
   slug: "barberia-del-sur",
   owner: "Marcos Duarte",
   address: "Av. Rivadavia 8800",
-  whatsapp: "+54 9 11 6500 4400",
+  whatsapp: "11 6500-4400",
+  whatsappStored: "+54 9 11 6500-4400",
   email: "marcos@delsur.com.ar",
-  pin: "5678",
+  password: "delsur-2026",
 };
 
 async function registerShop(page: Page) {
   await page.goto("/auth/nueva-barberia");
   await page.getByLabel("Nombre de la barbería").fill(NUEVA.name);
   await page.getByLabel("Dirección").fill(NUEVA.address);
-  await page.getByLabel("WhatsApp del local").fill(NUEVA.whatsapp);
+  await page.getByLabel("Tu número de teléfono").fill(NUEVA.whatsapp);
   await page.getByLabel("Tu nombre").fill(NUEVA.owner);
-  await page.getByLabel("Tu celular o email").fill(NUEVA.email);
-  await page.getByLabel("PIN de 4 dígitos").fill(NUEVA.pin);
+  await page.getByLabel("Tu email").fill(NUEVA.email);
+  await page.getByLabel("Contraseña", { exact: true }).fill(NUEVA.password);
+  await page.getByLabel("Repetir contraseña").fill(NUEVA.password);
   await page.getByRole("button", { name: "Crear barbería" }).click();
   await page.waitForURL("**/admin/agenda");
 }
@@ -40,36 +42,79 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     expect(session?.shop.name).toBe(NUEVA.name);
     expect(session?.shop.slug).toBe(NUEVA.slug);
 
-    // Arranca con catálogo mínimo y sin nada de la barbería demo.
+    // Arranca sin catálogo (los servicios y los precios son de cada local) y sin nada de la demo.
     expect(state.businessInfo.name).toBe(NUEVA.name);
     expect(state.appointments).toEqual([]);
     expect(state.clients).toEqual([]);
-    expect(state.services.length).toBeGreaterThan(0);
-    expect(state.services.map((s) => s.name)).not.toContain("Corte Clásico Tijera");
+    expect(state.services).toEqual([]);
     // Y publica SUS datos, no los del local de demostración.
-    expect(state.businessInfo).toMatchObject({ address: NUEVA.address, whatsapp: NUEVA.whatsapp });
+    expect(state.businessInfo).toMatchObject({ address: NUEVA.address, whatsapp: NUEVA.whatsappStored });
     expect(state.barbers.map((b) => b.name)).toEqual([NUEVA.owner]);
     await expect(page.getByRole("heading", { name: "Agenda" })).toBeVisible();
   });
 
-  test("el dueño de una barbería no ve nada de la otra", async ({ page }) => {
-    await openShop(page, NUEVA.slug);
-    await page.goto("/auth/login");
-    await page.getByRole("tab", { name: "Soy barbero" }).click();
-    await page.getByLabel("Email").fill(NUEVA.email);
-    await page.getByLabel("PIN", { exact: true }).fill(NUEVA.pin);
-    await page.getByRole("button", { name: "Ingresar" }).click();
+  test("el dueño carga, edita y elimina sus propios servicios, con su precio", async ({ page }) => {
+    await page.goto("/");
+    await fillLogin(page, "barbero", NUEVA.email, NUEVA.password);
+    await page.waitForURL("**/admin/agenda");
+    await page.goto("/admin/servicios");
+
+    // Sin catálogo no se puede agendar: la pantalla lo dice y ofrece cargar el primero.
+    await expect(page.getByText("Todavía no cargaste tus servicios")).toBeVisible();
+    await page.getByRole("button", { name: "Crear mi primer servicio" }).click();
+
+    // Alta con el precio del local.
+    const form = page.getByRole("dialog", { name: "Nuevo servicio" });
+    await form.getByLabel("Nombre").fill("Corte a máquina");
+    await form.getByLabel("Precio").fill("7000");
+    await form.getByLabel("Duración").selectOption("30");
+    await form.getByRole("button", { name: "Crear servicio" }).click();
+    await expect(form).toBeHidden();
+    await expect(page.getByRole("button", { name: /Corte a máquina/ })).toContainText("$7.000");
+
+    // Modificación: el precio es de esta barbería y nadie más lo cambia.
+    await page.getByRole("button", { name: /Corte a máquina/ }).click();
+    const edit = page.getByRole("dialog", { name: "Editar servicio" });
+    await edit.getByLabel("Precio").fill("9500");
+    await edit.getByRole("button", { name: "Guardar cambios" }).click();
+    await expect(edit).toBeHidden();
+    await expect(page.getByRole("button", { name: /Corte a máquina/ })).toContainText("$9.500");
+
+    const mine = (await pageState(page)).state.services;
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ name: "Corte a máquina", price: 9500 });
+
+    // La barbería de al lado sigue con las suyas, intactas.
+    const other = await newDevice(page.context().browser()!);
+    await openShop(other.page);
+    await fillLogin(other.page, "barbero", ADMIN.email, ADMIN.password);
+    await other.page.waitForURL("**/admin/agenda");
+    const theirs = (await pageState(other.page)).state.services;
+    expect(theirs.map((s) => s.name)).toContain("Corte Clásico Tijera");
+    expect(theirs.map((s) => s.name)).not.toContain("Corte a máquina");
+    await other.context.close();
+
+    // Baja: se puede sacar del catálogo y vuelve a quedar vacío.
+    await page.getByRole("button", { name: /Corte a máquina/ }).click();
+    await page.getByRole("dialog", { name: "Editar servicio" }).getByRole("button", { name: "Eliminar servicio" }).click();
+    await expect(page.getByText("Todavía no cargaste tus servicios")).toBeVisible();
+    expect((await pageState(page)).state.services).toEqual([]);
+  });
+
+  test("el dueño entra a su barbería sin elegirla y no ve nada de la otra", async ({ page }) => {
+    await page.goto("/");
+    await fillLogin(page, "barbero", NUEVA.email, NUEVA.password);
     await page.waitForURL("**/admin/agenda");
 
-    const { state } = await pageState(page);
+    const { session, state } = await pageState(page);
+    expect(session?.shop.slug).toBe(NUEVA.slug);
     expect(state.appointments).toEqual([]);
     expect(state.clients).toEqual([]);
 
     // Y los turnos de la otra barbería no se alcanzan ni por id.
     const otra = await newDevice(page.context().browser()!);
-    await openShop(otra.page, SHOP_SLUG);
     const demoAdmin = await otra.page.request.post("/api/auth/login", {
-      data: { role: "admin", identifier: ADMIN.email, pin: ADMIN.pin },
+      data: { role: "staff", identifier: ADMIN.email, password: ADMIN.password },
     });
     expect(demoAdmin.ok()).toBeTruthy();
     const ajeno = (await pageState(otra.page)).state.appointments.find((a) => a.status === "confirmado")!;
@@ -81,63 +126,71 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     expect(res.status()).toBe(404);
   });
 
-  test("las credenciales del dueño de una barbería no sirven en la otra", async ({ page }) => {
-    await openShop(page, NUEVA.slug);
-    await page.goto("/auth/login");
-    await page.getByRole("tab", { name: "Soy barbero" }).click();
-    await page.getByLabel("Email").fill(ADMIN.email); // dueño de la barbería demo
-    await page.getByLabel("PIN", { exact: true }).fill(ADMIN.pin);
-    await page.getByRole("button", { name: "Ingresar" }).click();
-    await expect(page.getByText(/Datos incorrectos/)).toBeVisible();
+  test("un barbero trabaja en una sola barbería: su email no abre otra", async ({ request }) => {
+    const res = await request.post("/api/shops", {
+      data: {
+        name: "Barbería Duplicada",
+        address: "Calle 1",
+        whatsapp: "+54 9 11 6500 0000",
+        ownerName: "Diego Sosa",
+        identifier: ADMIN.email,
+        password: "otra-clave-2026",
+      },
+    });
+    expect(res.status()).toBe(409);
   });
 
-  test("el mismo celular puede ser cliente de las dos barberías", async ({ page, browser }) => {
-    const phone = "+54 9 11 8888 7777";
-    const registrar = async (target: Page, slug: string, name: string) => {
-      await openShop(target, slug);
-      await target.goto("/auth/registro");
-      await target.getByLabel("Nombre y apellido").fill(name);
-      await target.getByLabel("Celular").fill(phone);
-      await target.getByLabel("PIN", { exact: true }).fill("2468");
-      await target.getByLabel("Repetir PIN").fill("2468");
-      await target.getByLabel(/Acepto las/).check();
-      const code = await captureOtp(target, "/api/auth/register", () =>
-        target.getByRole("button", { name: "Continuar" }).click(),
-      );
-      await target.getByLabel("Código").fill(code);
-      await target.getByRole("button", { name: "Verificar y crear cuenta" }).click();
-      await target.waitForURL("**/cliente/reservar");
-    };
-
-    await registrar(page, SHOP_SLUG, "Cliente Demo Sur");
-    expect((await pageState(page)).session?.shop.slug).toBe(SHOP_SLUG);
-
-    const otra = await newDevice(browser);
-    await registrar(otra.page, NUEVA.slug, "Cliente Del Sur");
-    expect((await pageState(otra.page)).session?.shop.slug).toBe(NUEVA.slug);
-    // Son dos cuentas distintas: cada una ve solo su barbería.
-    expect((await pageState(otra.page)).state.appointments).toEqual([]);
-    await otra.context.close();
-  });
-
-  test("un visitante sin barbería elegida ve el selector", async ({ browser }) => {
+  test("una sola cuenta de cliente se suma a las dos barberías y pasa de una a otra", async ({ browser }) => {
+    // Dispositivo nuevo, sin link de ningún local: con dos barberías publicadas no hay una implícita.
     const { context, page } = await newDevice(browser);
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Elegí tu barbería" })).toBeVisible();
-    await expect(page.getByRole("link", { name: new RegExp(NUEVA.name) })).toBeVisible();
+    await page.goto("/auth/registro");
+    await page.getByLabel("Nombre y apellido").fill("Julia Paz");
+    await page.getByLabel("Email").fill("julia.paz@example.com");
+    await page.getByLabel("Celular").fill("+54 9 11 8888 7777");
+    await page.getByLabel("Contraseña", { exact: true }).fill("julia-2026");
+    await page.getByLabel("Repetir contraseña").fill("julia-2026");
+    await page.getByLabel(/Acepto las/).check();
+    await page.getByRole("button", { name: "Crear cuenta" }).click();
 
-    // Al elegir una queda fijada y se ve su carta pública, sin pedir cuenta todavía.
-    await page.getByRole("link", { name: new RegExp(NUEVA.name) }).click();
-    await page.waitForURL("**/local");
-    await expect(page.getByRole("heading", { name: NUEVA.name })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Reservar turno/ })).toBeVisible();
+    // Todavía no eligió dónde se atiende: primero eso.
+    await page.waitForURL("**/cliente/barberias");
+    const lista = page.getByRole("list", { name: "Barberías" });
+    await lista.getByRole("button", { name: /D\.S Studio/ }).click();
+    await expect(lista.getByRole("button", { name: /D\.S Studio/ })).toHaveAttribute("aria-pressed", "true");
+    await lista.getByRole("button", { name: new RegExp(NUEVA.name) }).click();
+    await expect(lista.getByRole("button", { name: new RegExp(NUEVA.name) })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.waitForURL("**/cliente/reservar");
+
+    let { session } = await pageState(page);
+    expect(session?.shop.slug).toBe(SHOP_SLUG);
+    expect(session?.shops?.map((s) => s.slug).sort()).toEqual([NUEVA.slug, SHOP_SLUG].sort());
+
+    // Pasa a la otra desde el encabezado: ve los datos de esa barbería.
+    await page.getByRole("button", { name: /Barbería activa/ }).click();
+    await page.getByRole("dialog", { name: "Tus barberías" }).getByRole("button", { name: new RegExp(NUEVA.name) }).click();
+    await expect(page.getByRole("button", { name: `Barbería activa: ${NUEVA.name}` })).toBeVisible();
+    ({ session } = await pageState(page));
+    expect(session?.shop.slug).toBe(NUEVA.slug);
+    const { state } = await pageState(page);
+    expect(state.businessInfo.name).toBe(NUEVA.name);
+    // Cada barbería tiene su propia ficha del cliente.
+    expect(state.clients).toEqual([expect.objectContaining({ name: "Julia Paz", phone: "+54 9 11 8888 7777" })]);
     await context.close();
   });
 
-  test("un slug inexistente vuelve al selector", async ({ browser }) => {
+  test("el link de una barbería lleva al ingreso parado en ella", async ({ browser }) => {
+    const { context, page } = await newDevice(browser);
+    await openShop(page, NUEVA.slug);
+    await page.waitForURL("**/auth/login**");
+    await expect(page.getByText(`Reservá tu turno en ${NUEVA.name}`)).toBeVisible();
+    await context.close();
+  });
+
+  test("un slug inexistente vuelve al ingreso", async ({ browser }) => {
     const { context, page } = await newDevice(browser);
     await page.goto("/b/no-existe-esta-barberia");
-    await expect(page.getByRole("heading", { name: "Elegí tu barbería" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ingresá a tu cuenta" })).toBeVisible();
     await context.close();
   });
 });

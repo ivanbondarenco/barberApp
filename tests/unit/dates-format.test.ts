@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   addDays,
+  addMonths,
   dateTime,
   dayShort,
   hoursUntil,
@@ -8,7 +9,9 @@ import {
   isSunday,
   longDate,
   minutesToTime,
+  monthGrid,
   openDaysFrom,
+  sameMonth,
   timeToMinutes,
   todayISO,
   toISODate,
@@ -35,6 +38,25 @@ describe("fechas", () => {
     expect(workWeek("2026-09-16")).toEqual(["2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19"]);
     expect(workWeek("2026-09-20")[0]).toBe("2026-09-14");
     expect(workWeek("2026-09-16", 1)[0]).toBe("2026-09-21");
+  });
+
+  it("el calendario del mes arranca en lunes y rellena con huecos", () => {
+    const weeks = monthGrid("2026-09-16");
+    // Septiembre 2026 arranca un martes: la primera casilla es un hueco.
+    expect(weeks[0][0]).toBeNull();
+    expect(weeks[0][1]).toBe("2026-09-01");
+    expect(weeks.flat().filter(Boolean)).toHaveLength(30);
+    expect(weeks.every((w) => w.length === 7)).toBe(true);
+    // Febrero de un año no bisiesto que arranca lunes entra justo en cuatro semanas.
+    expect(monthGrid("2027-02-10")).toHaveLength(4);
+  });
+
+  it("salta de mes recortando el día y compara meses", () => {
+    expect(addMonths("2026-09-16", 1)).toBe("2026-10-16");
+    expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");
+    expect(addMonths("2026-01-15", -1)).toBe("2025-12-15");
+    expect(sameMonth("2026-09-01", "2026-09-30")).toBe(true);
+    expect(sameMonth("2026-09-30", "2026-10-01")).toBe(false);
   });
 
   it("número de semana ISO", () => {

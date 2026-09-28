@@ -25,9 +25,9 @@ function shortName(name: string): string {
 
 export async function GET() {
   const shop = await visitorShop();
-  const name = shop ? (await loadState(shop.id)).state.businessInfo.name : "Turnos de barbería";
+  const name = shop ? (await loadState(shop.id)).state.businessInfo.name : "BarberApp";
   // Nombre corto: lo que entra abajo del ícono en el celular. Se corta por palabras, así
-  // "D.S Studio Barbería" queda como "D.S Studio" y no como "D.S Studio…".
+  // "Barbería Del Sur" queda como "Barbería Del" y no como "Barbería De…".
   const short = shortName(name);
 
   return Response.json(

@@ -7,7 +7,9 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
+import { IntegrationGuideButton } from "@/components/admin/IntegrationGuide";
 import { ShopLinkCard } from "@/components/admin/ShopLinkCard";
+import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
 import { Page } from "@/components/motion/Page";
 import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
@@ -26,6 +28,7 @@ const ORDER = [1, 2, 3, 4, 5, 6, 0];
 const TIMES = Array.from({ length: 31 }, (_, i) => minutesToTime(7 * 60 + i * 30));
 
 const infoSchema = z.object({
+  name: z.string().trim().min(3, "Ingresá el nombre de la barbería"),
   address: z.string().trim().min(3, "Requerido"),
   neighborhood: z.string().trim().min(3, "Requerido"),
   whatsapp: z.string().trim().refine((v) => v.replace(/\D/g, "").length >= 10, "Celular inválido"),
@@ -98,6 +101,14 @@ function BusinessForm() {
       noValidate
       className="flex flex-col gap-3 rounded-2xl bg-surface-lowest p-4 shadow-xs"
     >
+      <Field
+        label="Nombre de la barbería"
+        htmlFor="bi-name"
+        error={errors.name?.message}
+        hint="Así te ven tus clientes. El link del local no cambia."
+      >
+        <input id="bi-name" className="field" autoComplete="organization" {...register("name")} />
+      </Field>
       <Field label="Dirección" htmlFor="bi-address" error={errors.address?.message}>
         <input id="bi-address" className="field" {...register("address")} />
       </Field>
@@ -208,7 +219,10 @@ function PaymentsPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-caps text-secondary">Mercado Pago</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-caps text-secondary">Mercado Pago</h2>
+        <IntegrationGuideButton guide="mercadopago" />
+      </div>
       <div className={cn("rounded-2xl p-4", ready ? "bg-mint" : "bg-surface-lowest shadow-xs")}>
         <p className={cn("text-[15px] font-semibold", ready && "text-mint-ink")}>
           {ready ? "Cobro online activo" : "Cobro online sin configurar"}
@@ -261,24 +275,9 @@ interface PaymentStatus {
   canReceiveWebhooks: boolean;
 }
 
-/** Cambio del PIN de la cuenta del staff. */
+/** Cambio de la contraseña de la cuenta del staff. */
 function AccountPanel() {
   const session = useAppStore((s) => s.session);
-  const changePin = useAppStore((s) => s.changePin);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    if (current.length !== 4 || next.length !== 4) return toast("El PIN tiene 4 dígitos", "error");
-    setSaving(true);
-    const result = await changePin(current, next);
-    setSaving(false);
-    if (!result.ok) return toast(result.error, "error");
-    setCurrent("");
-    setNext("");
-    toast("PIN actualizado", "success");
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -287,37 +286,7 @@ function AccountPanel() {
         <p className="text-[15px] font-semibold">{session?.name}</p>
         <p className="text-[13px] text-secondary">{session?.identifier}</p>
       </div>
-
-      <div className="flex flex-col gap-3">
-        <Field label="PIN actual" htmlFor="pin-current">
-          <input
-            id="pin-current"
-            inputMode="numeric"
-            autoComplete="current-password"
-            maxLength={4}
-            className="field tracking-[0.5em]"
-            placeholder="••••"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          />
-        </Field>
-        <Field label="PIN nuevo" htmlFor="pin-next">
-          <input
-            id="pin-next"
-            inputMode="numeric"
-            autoComplete="new-password"
-            maxLength={4}
-            className="field tracking-[0.5em]"
-            placeholder="••••"
-            value={next}
-            onChange={(e) => setNext(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          />
-        </Field>
-      </div>
-
-      <button type="button" disabled={saving} onClick={() => void submit()} className="tap btn-primary">
-        {saving ? "Guardando…" : "Cambiar PIN"}
-      </button>
+      <ChangePasswordForm recoverHref="/auth/recuperar?tipo=barbero" />
     </div>
   );
 }
@@ -331,8 +300,8 @@ interface WhatsappStatus {
 }
 
 /**
- * Credenciales de WhatsApp Cloud API del local. Con esto la app manda los códigos de
- * verificación del registro, del acceso por código y de la recuperación de PIN.
+ * Credenciales de WhatsApp Cloud API del local. Con esto la app manda el código para
+ * recuperar la contraseña.
  */
 function WhatsappPanel() {
   const ready = useAppStore((s) => s.integrations.whatsappReady);
@@ -363,7 +332,10 @@ function WhatsappPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-caps text-secondary">WhatsApp</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-caps text-secondary">WhatsApp</h2>
+        <IntegrationGuideButton guide="whatsapp" />
+      </div>
       <div className={cn("rounded-2xl p-4", ready ? "bg-mint" : "bg-surface-lowest shadow-xs")}>
         <p className={cn("text-[15px] font-semibold", ready && "text-mint-ink")}>
           {ready ? "WhatsApp conectado" : "WhatsApp sin configurar"}
@@ -371,7 +343,7 @@ function WhatsappPanel() {
         <p className={cn("mt-1 text-[13px]", ready ? "text-mint-ink" : "text-secondary")}>
           {ready
             ? "Los códigos de verificación salen desde tu número."
-            : "Sin esto, tus clientes no pueden crear cuenta ni recuperar el PIN por su cuenta."}
+            : "Sin esto, tus clientes y tu equipo no pueden recuperar su contraseña por su cuenta."}
         </p>
       </div>
 

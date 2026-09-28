@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { mailReady } from "@/server/mail";
 import { listShops } from "@/server/repository";
 import { storageStats } from "@/server/db";
 
@@ -24,6 +25,8 @@ export async function GET() {
         status: "ok",
         uptimeSeconds: Math.round(process.uptime()),
         shops: shops.length,
+        /** ¿Hay SMTP configurado? Sin esto la app anda, pero no manda ningún mail. */
+        mail: mailReady(),
         storage: {
           bytes,
           megabytes: Math.round((bytes / 1024 / 1024) * 100) / 100,

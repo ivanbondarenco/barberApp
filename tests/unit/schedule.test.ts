@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildSlots, cashDepositDeadline, DEFAULT_BUSINESS_HOURS, nextFreeTime, occupancy, openingHours, shiftOf } from "@/lib/schedule";
+import {
+  buildSlots,
+  cashDepositDeadline,
+  clientBookingLimit,
+  DEFAULT_BUSINESS_HOURS,
+  nextFreeTime,
+  occupancy,
+  openingHours,
+  shiftOf,
+  withinClientWindow,
+} from "@/lib/schedule";
 import type { Appointment, TimeBlock } from "@/lib/types";
 import { freezeTime, MONDAY_9AM } from "./support/fixtures";
 
@@ -97,6 +107,15 @@ describe("buildSlots", () => {
     const appointments = [appt({ time: "09:00", durationMin: 60 })];
     expect(nextFreeTime({ date: "2026-09-16", barberId: "b1", appointments, blocks: [], now: MONDAY_9AM })).toBe("10:00");
     expect(occupancy("2026-09-16", "b1", appointments)).toBe(Math.round((60 / 660) * 100));
+  });
+});
+
+describe("ventana de reserva del cliente", () => {
+  it("llega hasta dos semanas desde hoy, inclusive", () => {
+    expect(clientBookingLimit(MONDAY_9AM)).toBe("2026-09-28");
+    expect(withinClientWindow("2026-09-28", MONDAY_9AM)).toBe(true);
+    expect(withinClientWindow("2026-09-29", MONDAY_9AM)).toBe(false);
+    expect(withinClientWindow("2026-09-13", MONDAY_9AM)).toBe(false);
   });
 });
 

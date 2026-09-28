@@ -3,6 +3,7 @@
 import * as m from "motion/react-m";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAppStore } from "@/store/useAppStore";
 import { NAV } from "@/components/motion/Page";
 import { cn } from "@/lib/cn";
 import { spring } from "@/lib/motion";
@@ -12,6 +13,8 @@ import { BrandMark } from "./Logo";
 /** Navegación lateral de escritorio: reemplaza a la barra inferior desde 1024px. */
 export function SideNav({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
+  // El panel es de un local: se muestra su nombre, no el de la app.
+  const shopName = useAppStore((s) => s.session?.shop?.name ?? "BarberApp");
 
   return (
     <aside
@@ -20,7 +23,7 @@ export function SideNav({ items }: { items: NavItem[] }) {
     >
       <div className="flex h-16 items-center gap-2.5 px-5">
         <BrandMark className="h-9 w-9 rounded-lg" />
-        <span className="text-[15px] font-bold tracking-tight">D.S Studio</span>
+        <span className="truncate text-[15px] font-bold tracking-tight">{shopName}</span>
       </div>
       <nav className="flex-1 px-3 py-2">
         <ul className="flex flex-col gap-1">

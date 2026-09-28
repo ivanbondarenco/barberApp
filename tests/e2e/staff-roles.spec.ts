@@ -1,17 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import { adminApi, loginAsAdmin, loginAsClient, newDevice, openShop, pageState, resetData, runCommand } from "./helpers";
+import { adminApi, fillLogin, loginAsAdmin, loginAsClient, newDevice, pageState, resetData, runCommand } from "./helpers";
 
 test.beforeAll(resetData);
 
-const BARBER = { name: "Nico", email: "nico@dsstudio.com.ar", pin: "4321" };
+const BARBER = { name: "Nico", email: "nico@dsstudio.com.ar", password: "nico-2026" };
 
 async function loginAsBarber(page: Page) {
-  await openShop(page);
-    await page.goto("/auth/login");
-  await page.getByRole("tab", { name: "Soy barbero" }).click();
-  await page.getByLabel("Email").fill(BARBER.email);
-  await page.getByLabel("PIN", { exact: true }).fill(BARBER.pin);
-  await page.getByRole("button", { name: "Ingresar" }).click();
+  await page.goto("/");
+  await fillLogin(page, "barbero", BARBER.email, BARBER.password);
   await page.waitForURL("**/admin/agenda");
 }
 
@@ -23,7 +19,7 @@ test.describe.serial("cuentas de barbero", () => {
 
     const form = page.getByRole("dialog", { name: "Editar barbero" });
     await form.getByLabel("Email o celular").fill(BARBER.email);
-    await form.getByLabel("PIN inicial").fill(BARBER.pin);
+    await form.getByLabel("Contraseña inicial").fill(BARBER.password);
     await form.getByRole("button", { name: "Guardar cambios" }).click();
     await expect(form).toBeHidden();
 
@@ -47,10 +43,9 @@ test.describe.serial("cuentas de barbero", () => {
     for (const a of others) expect(a.clientName).toBe("");
   });
 
-  test("el barbero no tiene caja, finanzas ni catálogo", async ({ page }) => {
+  test("el barbero no tiene finanzas ni catálogo", async ({ page }) => {
     await loginAsBarber(page);
 
-    await expect(page.getByRole("main").getByRole("button", { name: /Caja/ })).toBeHidden();
     for (const label of ["Finanzas", "Catálogo", "Tienda"]) {
       await expect(page.getByRole("navigation").getByRole("link", { name: label })).toBeHidden();
     }
@@ -65,7 +60,7 @@ test.describe.serial("cuentas de barbero", () => {
   test("el servidor rechaza los comandos del dueño aunque los mande un barbero", async ({ page }) => {
     await loginAsBarber(page);
     for (const command of [
-      { type: "cash.open" },
+      { type: "settings.deposit", allowCash: false },
       { type: "service.delete", id: "s-tijera" },
       { type: "barber.delete", id: "b-diego" },
       { type: "settings.info", patch: { address: "hackeado" } },
@@ -104,13 +99,9 @@ test.describe.serial("cuentas de barbero", () => {
 
     // Y ya no entra. Hace falta un dispositivo limpio: esta pestaña sigue siendo la del dueño.
     const { context, page: fresh } = await newDevice(browser);
-    await openShop(fresh);
-    await fresh.goto("/auth/login");
-    await fresh.getByRole("tab", { name: "Soy barbero" }).click();
-    await fresh.getByLabel("Email").fill(BARBER.email);
-    await fresh.getByLabel("PIN", { exact: true }).fill(BARBER.pin);
-    await fresh.getByRole("button", { name: "Ingresar" }).click();
-    await expect(fresh.getByText(/Datos incorrectos/)).toBeVisible();
+    await fresh.goto("/");
+    await fillLogin(fresh, "barbero", BARBER.email, BARBER.password);
+    await expect(fresh.getByText(/Email o contraseña incorrectos/)).toBeVisible();
     await context.close();
   });
 });

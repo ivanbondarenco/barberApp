@@ -4,11 +4,24 @@ import { adminApi, loginAsAdmin, loginAsClient, newDevice, openShop, pageState, 
 test.beforeAll(resetData);
 
 test.describe("carta pública del local", () => {
-  test("un visitante sin cuenta ve servicios, precios y horarios", async ({ browser }) => {
+  test("el link del local lleva directo al ingreso como cliente de esa barbería", async ({ browser }) => {
     const { context, page } = await newDevice(browser);
     // Llega por el link que comparte la barbería, sin sesión.
     await page.goto(`/b/${SHOP_SLUG}`);
-    await page.waitForURL("**/local");
+    await page.waitForURL("**/auth/login**");
+
+    await expect(page.getByRole("heading", { name: "Ingresá a tu cuenta" })).toBeVisible();
+    // Parado en esa barbería y con la solapa de cliente abierta, sin pasar por la carta.
+    await expect(page.getByText(/Reservá tu turno en D\.S Studio/)).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Soy cliente" })).toHaveAttribute("aria-selected", "true");
+    await context.close();
+  });
+
+  test("la carta pública muestra servicios, precios y horarios", async ({ browser }) => {
+    const { context, page } = await newDevice(browser);
+    // Ya no es el destino del link: se abre por su propia URL, con la barbería en la cookie.
+    await page.goto(`/b/${SHOP_SLUG}`);
+    await page.goto("/local");
 
     await expect(page.getByRole("heading", { name: /D\.S Studio/ })).toBeVisible();
     // Lo que la gente viene a ver: qué hacen y cuánto sale.

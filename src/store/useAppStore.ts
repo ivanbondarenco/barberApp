@@ -7,9 +7,12 @@ import { applyCommand, DomainError, type Actor, type Command, type DomainState }
 import { DEFAULT_DEPOSIT_RATE } from "@/lib/pricing";
 import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
 import { seedBusinessInfo } from "@/lib/mock-data";
-import type { ClientProfile, Role, Session, Shop } from "@/lib/types";
+import type { ClientProfile, Session, Shop } from "@/lib/types";
 
 export type Result = { ok: true } | { ok: false; error: string };
+
+/** Solapa del ingreso: cliente, o staff de una barbería (dueño o barbero). */
+export type LoginRole = "cliente" | "staff";
 
 interface ServerPayload {
   version: number;
@@ -38,11 +41,14 @@ interface SyncState {
 interface Actions {
   refresh: (force?: boolean) => Promise<void>;
   run: (command: Command) => Promise<Result>;
-  login: (role: Role, identifier: string, pin: string) => Promise<Result>;
-  otp: (phone: string, code?: string) => Promise<Result>;
-  register: (input: { name: string; phone: string; email?: string; pin: string; code?: string }) => Promise<Result>;
-  recover: (input: { identifier: string; code?: string; pin?: string }) => Promise<Result>;
-  changePin: (currentPin: string, newPin: string) => Promise<Result>;
+  login: (role: LoginRole, identifier: string, password: string) => Promise<Result>;
+  register: (input: { name: string; email: string; phone: string; password: string }) => Promise<Result>;
+  recover: (input: { role: LoginRole; identifier: string; code?: string; password?: string }) => Promise<Result>;
+  changePassword: (current: string, next: string) => Promise<Result>;
+  /** Vuelve a mandar el mail con el link para confirmar la casilla de la cuenta. */
+  resendVerification: () => Promise<Result>;
+  /** Barberías del cliente: sumarse, dejarla o pasar a operar en ella. */
+  membership: (shopId: string, action: "join" | "leave" | "select") => Promise<Result>;
   logout: () => Promise<void>;
 }
 
@@ -56,8 +62,6 @@ const emptyDomain: DomainState = {
   appointments: [],
   blocks: [],
   depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
-  cashRegister: { open: false },
-  cashClosures: [],
   businessHours: DEFAULT_BUSINESS_HOURS,
   businessInfo: seedBusinessInfo,
   // Lo confirma el servidor en el primer /api/state; por defecto, sin integraciones.
@@ -71,7 +75,7 @@ export function domainOf(state: DomainState): DomainState {
 }
 
 export function actorOf(session: Session | null): Actor | null {
-  if (!session) return null;
+  if (!session?.shop) return null;
   const shopId = session.shop.id;
   if (session.role === "admin") return { role: "admin", shopId };
   if (session.role === "barbero") return { role: "barbero", shopId, barberId: session.barberId ?? "" };
@@ -180,28 +184,29 @@ export const useAppStore = create<AppState>()(
           }
         },
 
-        login: async (role, identifier, pin) => {
-          const result = await authCall("/api/auth/login", { role, identifier, pin });
+        login: async (role, identifier, password) => {
+          const result = await authCall("/api/auth/login", { role, identifier, password });
           if (result.ok) await get().refresh(true);
-          return result;
-        },
-
-        otp: async (phone, code) => {
-          const result = await authCall("/api/auth/otp", { phone, code });
-          if (result.ok && code) await get().refresh(true);
           return result;
         },
 
         register: async (input) => {
           const result = await authCall("/api/auth/register", input);
-          // Sin código solo se pidió el envío: todavía no hay sesión que refrescar.
-          if (result.ok && input.code) await get().refresh(true);
+          if (result.ok) await get().refresh(true);
           return result;
         },
 
         recover: (input) => authCall("/api/auth/recover", input),
 
-        changePin: (currentPin, newPin) => authCall("/api/auth/pin", { currentPin, newPin }),
+        changePassword: (current, next) => authCall("/api/auth/password", { current, next }),
+
+        resendVerification: () => authCall("/api/auth/verificar", {}),
+
+        membership: async (shopId, action) => {
+          const result = await authCall("/api/memberships", { shopId, action });
+          if (result.ok) await get().refresh(true);
+          return result;
+        },
 
         logout: async () => {
           await authCall("/api/auth/logout", {});
@@ -213,7 +218,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "ds-studio-cache",
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       // Cache para abrir al instante y mostrar datos sin conexión; el servidor es la fuente de verdad.
       partialize: (s) => ({ ...domainOf(s), session: s.session, shop: s.shop, version: s.version }),

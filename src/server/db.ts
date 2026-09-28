@@ -24,7 +24,6 @@ export const SHOP_TABLES = [
   "services",
   "products",
   "blocks",
-  "cash_closures",
   "appointments",
 ] as const;
 
@@ -42,7 +41,6 @@ CREATE TABLE IF NOT EXISTS barbers (shop_id TEXT NOT NULL, id TEXT NOT NULL, dat
 CREATE TABLE IF NOT EXISTS services (shop_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (shop_id, id));
 CREATE TABLE IF NOT EXISTS products (shop_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (shop_id, id));
 CREATE TABLE IF NOT EXISTS blocks (shop_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (shop_id, id));
-CREATE TABLE IF NOT EXISTS cash_closures (shop_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (shop_id, id));
 CREATE TABLE IF NOT EXISTS appointments (
   shop_id TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -56,22 +54,41 @@ CREATE TABLE IF NOT EXISTS appointments (
 );
 CREATE INDEX IF NOT EXISTS appointments_date ON appointments (shop_id, date, barber_id);
 CREATE INDEX IF NOT EXISTS appointments_client ON appointments (shop_id, client_id);
+-- Cuentas. El staff (dueño y barberos) trabaja en una sola barbería: la de shop_id.
+-- El cliente tiene una única cuenta (shop_id NULL) y se suma a las barberías por memberships.
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  shop_id TEXT NOT NULL,
+  shop_id TEXT,
   role TEXT NOT NULL CHECK (role IN ('cliente', 'barbero', 'admin')),
   identifier TEXT NOT NULL,
   name TEXT NOT NULL,
-  client_id TEXT,
   barber_id TEXT,
-  pin_hash TEXT NOT NULL,
+  -- Solo clientes: celular de contacto, para crear su ficha en cada barbería a la que se suma.
+  phone TEXT,
+  password_hash TEXT NOT NULL,
+  -- Cuándo confirmó su email desde el link que le mandamos. NULL: todavía no lo hizo.
+  email_verified_at TEXT,
   created_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS users_shop_identifier ON users (shop_id, identifier);
+CREATE UNIQUE INDEX IF NOT EXISTS users_client_identifier ON users (identifier) WHERE role = 'cliente';
+-- Sin UNIQUE a propósito: bases anteriores pueden traer el mismo dato en dos barberías.
+-- Las altas nuevas lo impiden en el código (un barbero trabaja en una sola barbería).
+CREATE INDEX IF NOT EXISTS users_staff_identifier ON users (identifier) WHERE role <> 'cliente';
+-- Barberías en las que se atiende cada cliente, con su ficha (clients.id) en cada una.
+CREATE TABLE IF NOT EXISTS memberships (
+  user_id TEXT NOT NULL,
+  shop_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, shop_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS memberships_client ON memberships (shop_id, client_id);
+-- shop_id: barbería activa de la sesión de un cliente (el staff siempre opera en la suya).
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
-  expires_at TEXT NOT NULL
+  expires_at TEXT NOT NULL,
+  shop_id TEXT
 );
 CREATE TABLE IF NOT EXISTS secrets (
   scope TEXT NOT NULL,
@@ -86,6 +103,15 @@ CREATE TABLE IF NOT EXISTS payment_events (
   appointment_id TEXT NOT NULL,
   status TEXT NOT NULL,
   received_at TEXT NOT NULL
+);
+-- Links de un solo uso que se mandan por mail (hoy: confirmar el email).
+-- Se guarda el hash del token, nunca el token.
+CREATE TABLE IF NOT EXISTS email_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 -- Códigos de verificación por WhatsApp. Se guarda el hash, nunca el código.
 -- Hay a lo sumo uno vigente por (barbería, identificador, trámite): pedir otro reemplaza el anterior.
@@ -112,8 +138,69 @@ const tableSql = (db: Database, name: string): string | undefined =>
  * nueva, copiar las filas y renombrar.
  */
 function migrate(db: Database): void {
-  const usersSql = tableSql(db, "users");
-  if (!usersSql) return; // Base nueva: la crea SCHEMA con la forma final.
+  if (!tableSql(db, "users")) return; // Base nueva: la crea SCHEMA con la forma final.
+  migrateToV3(db);
+  migrateToV4(db);
+  // v5: marca de email confirmado.
+  if (!tableSql(db, "users")!.includes("email_verified_at")) {
+    db.run("ALTER TABLE users ADD COLUMN email_verified_at TEXT");
+  }
+  dropStarterServices(db);
+}
+
+/** Servicios de ejemplo que el alta de barbería creaba, con su precio inventado. */
+const STARTER_SERVICES: Record<string, { name: string; price: number; durationMin: number }> = {
+  "s-corte": { name: "Corte de pelo", price: 10000, durationMin: 45 },
+  "s-barba": { name: "Barba", price: 6000, durationMin: 30 },
+  "s-combo": { name: "Corte + Barba", price: 15000, durationMin: 60 },
+};
+
+/**
+ * v6: saca los servicios de ejemplo que el alta le dejaba a cada barbería nueva.
+ *
+ * El catálogo y los precios son de cada local, así que estos no son de nadie. Solo se borran los
+ * que siguen tal cual se crearon (mismo nombre, precio y duración) y que ningún turno usó: si el
+ * dueño los hizo propios cambiándoles algo, o ya trabajó con ellos, quedan donde están.
+ */
+function dropStarterServices(db: Database): void {
+  if (!tableSql(db, "services") || !tableSql(db, "meta")) return;
+  const ids = Object.keys(STARTER_SERVICES);
+  const rows = queryAll<{ shop_id: string; id: string; data: string }>(
+    db,
+    `SELECT shop_id, id, data FROM services WHERE id IN (${ids.map(() => "?").join(", ")})`,
+    ids,
+  );
+
+  const touched = new Set<string>();
+  for (const row of rows) {
+    const starter = STARTER_SERVICES[row.id];
+    const service = JSON.parse(row.data) as { name: string; price: number; durationMin: number };
+    if (service.name !== starter.name || service.price !== starter.price || service.durationMin !== starter.durationMin) continue;
+    const used = queryOne<{ n: number }>(
+      db,
+      "SELECT COUNT(*) AS n FROM appointments WHERE shop_id = ? AND data LIKE ?",
+      [row.shop_id, `%"serviceId":"${row.id}"%`],
+    );
+    if ((used?.n ?? 0) > 0) continue;
+    db.run("DELETE FROM services WHERE shop_id = ? AND id = ?", [row.shop_id, row.id]);
+    touched.add(row.shop_id);
+  }
+
+  // Cada barbería tocada avanza su versión: así los navegadores abiertos se enteran.
+  for (const shopId of touched) {
+    const current = Number(
+      queryOne<{ value: string }>(db, "SELECT value FROM meta WHERE shop_id = ? AND key = 'version'", [shopId])?.value ?? 0,
+    );
+    db.run(
+      `INSERT INTO meta (shop_id, key, value) VALUES (?, 'version', ?)
+       ON CONFLICT(shop_id, key) DO UPDATE SET value = excluded.value`,
+      [shopId, String(current + 1)],
+    );
+  }
+}
+
+function migrateToV3(db: Database): void {
+  const usersSql = tableSql(db, "users")!;
 
   // v2: rol `barbero` y vínculo con el sillón.
   if (!usersSql.includes("'barbero'")) {
@@ -191,8 +278,11 @@ function migrate(db: Database): void {
     CREATE UNIQUE INDEX users_shop_identifier ON users (shop_id, identifier);
   `);
 
-  // Las credenciales guardadas bajo el scope viejo pasan a la barbería.
-  db.run("UPDATE secrets SET scope = ? WHERE scope = 'default'", [legacy]);
+  // Las credenciales guardadas bajo el scope viejo pasan a la barbería. Las bases anteriores
+  // a las credenciales cifradas no tienen la tabla: la crea SCHEMA después.
+  if (tableSql(db, "secrets")) {
+    db.run("UPDATE secrets SET scope = ? WHERE scope = 'default'", [legacy]);
+  }
 
   if (tableSql(db, "payment_events") && !tableSql(db, "payment_events")!.includes("shop_id")) {
     db.run(`
@@ -223,6 +313,107 @@ function migrate(db: Database): void {
   }
 }
 
+interface LegacyUser {
+  id: string;
+  shop_id: string;
+  role: string;
+  identifier: string;
+  name: string;
+  client_id: string | null;
+  barber_id: string | null;
+  pin_hash: string;
+  created_at: string;
+}
+
+/**
+ * v4: cuentas de cliente únicas y contraseñas.
+ *
+ * Hasta v3 cada barbería tenía sus propias cuentas: la misma persona era un usuario distinto
+ * en cada local. Ahora el cliente tiene una sola cuenta y se suma a varias barberías.
+ * - Los clientes con el mismo identificador en varias barberías se unen en una cuenta (la más
+ *   vieja) y cada barbería queda como una membership con su ficha.
+ * - Se entra con email: si la cuenta era por celular y la ficha tiene email libre, pasa a ser ese.
+ * - El PIN hasheado sigue sirviendo como contraseña hasta que la persona la cambie.
+ */
+function migrateToV4(db: Database): void {
+  if (tableSql(db, "users")!.includes("password_hash")) return;
+
+  const users = queryAll<LegacyUser>(db, "SELECT * FROM users ORDER BY created_at, id");
+  const profile = (shopId: string, clientId: string): { email?: string; phone?: string } => {
+    const row = queryOne<{ data: string }>(db, "SELECT data FROM clients WHERE shop_id = ? AND id = ?", [shopId, clientId]);
+    const data = row ? (JSON.parse(row.data) as { email?: string; phone?: string }) : {};
+    const email = data.email?.trim().toLowerCase();
+    return { email: email?.includes("@") ? email : undefined, phone: data.phone };
+  };
+
+  db.run(`
+    CREATE TABLE users_v4 (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT,
+      role TEXT NOT NULL CHECK (role IN ('cliente', 'barbero', 'admin')),
+      identifier TEXT NOT NULL,
+      name TEXT NOT NULL,
+      barber_id TEXT,
+      phone TEXT,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS memberships (
+      user_id TEXT NOT NULL, shop_id TEXT NOT NULL, client_id TEXT NOT NULL, created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, shop_id)
+    );
+  `);
+  if (tableSql(db, "sessions") && !tableSql(db, "sessions")!.includes("shop_id")) {
+    db.run("ALTER TABLE sessions ADD COLUMN shop_id TEXT");
+  }
+
+  // Staff: se copia tal cual.
+  for (const u of users.filter((x) => x.role !== "cliente")) {
+    db.run(
+      `INSERT INTO users_v4 (id, shop_id, role, identifier, name, barber_id, password_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [u.id, u.shop_id, u.role, u.identifier, u.name, u.barber_id, u.pin_hash, u.created_at],
+    );
+  }
+
+  // Clientes: una cuenta por identificador, con una membership por barbería.
+  const groups = new Map<string, LegacyUser[]>();
+  for (const u of users.filter((x) => x.role === "cliente" && x.client_id)) {
+    groups.set(u.identifier, [...(groups.get(u.identifier) ?? []), u]);
+  }
+  const taken = new Set([...groups.keys()].filter((k) => !k.startsWith("tel:")));
+  for (const [identifier, rows] of groups) {
+    const account = rows[0];
+    let final = identifier;
+    if (identifier.startsWith("tel:")) {
+      const email = rows.map((r) => profile(r.shop_id, r.client_id!).email).find((e) => e && !taken.has(e));
+      if (email) final = email;
+    }
+    taken.add(final);
+    const phone = rows.map((r) => profile(r.shop_id, r.client_id!).phone).find(Boolean) ?? null;
+    db.run(
+      `INSERT INTO users_v4 (id, shop_id, role, identifier, name, barber_id, phone, password_hash, created_at)
+       VALUES (?, NULL, 'cliente', ?, ?, NULL, ?, ?, ?)`,
+      [account.id, final, account.name, phone, account.pin_hash, account.created_at],
+    );
+    for (const r of rows) {
+      db.run("INSERT OR IGNORE INTO memberships (user_id, shop_id, client_id, created_at) VALUES (?, ?, ?, ?)", [
+        account.id,
+        r.shop_id,
+        r.client_id,
+        r.created_at,
+      ]);
+      // Las sesiones abiertas siguen valiendo, ahora sobre la cuenta unificada y en su barbería.
+      db.run("UPDATE sessions SET user_id = ?, shop_id = ? WHERE user_id = ?", [account.id, r.shop_id, r.id]);
+    }
+  }
+
+  db.run(`
+    DROP TABLE users;
+    ALTER TABLE users_v4 RENAME TO users;
+  `);
+}
+
 interface DbHolder {
   db: Database;
   mtimeMs: number;
@@ -248,7 +439,11 @@ async function open(): Promise<DbHolder> {
 }
 
 export async function getDb(): Promise<Database> {
-  globalForDb.__dsDb ??= open();
+  // Si abrir falla no se guarda la promesa rechazada: el próximo pedido vuelve a intentar.
+  globalForDb.__dsDb ??= open().catch((error) => {
+    globalForDb.__dsDb = undefined;
+    throw error;
+  });
   const holder = await globalForDb.__dsDb;
 
   // Otro proceso escribió el archivo: recargar para no pisar cambios.

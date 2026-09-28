@@ -41,6 +41,16 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, classN
   );
 }
 
+/**
+ * Cuántos "atrás" pedimos nosotros y todavía no llegaron.
+ *
+ * La hoja deshace su entrada del historial al cerrarse, y ese `popstate` no tiene que
+ * interpretarse como que el usuario tocó atrás. En desarrollo React monta cada componente dos
+ * veces, así que el aviso del primer desmontaje puede llegar cuando la hoja ya se montó de
+ * nuevo: sin este contador, la hoja se cerraba sola apenas se abría.
+ */
+let pendingBack = 0;
+
 function SheetPanel({ onClose, title, subtitle, children, footer, className }: Omit<SheetProps, "open">) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -58,6 +68,11 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
     window.history.pushState({ ...window.history.state, dsSheet: true }, "");
     let closedByHistory = false;
     const onPop = () => {
+      // Un "atrás" nuestro, no del usuario: solo deshace la entrada que habíamos agregado.
+      if (pendingBack > 0) {
+        pendingBack -= 1;
+        return;
+      }
       closedByHistory = true;
       onCloseRef.current();
     };
@@ -71,7 +86,10 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
       window.removeEventListener("popstate", onPop);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = overflow;
-      if (!closedByHistory && window.history.state?.dsSheet) window.history.back();
+      if (!closedByHistory && window.history.state?.dsSheet) {
+        pendingBack += 1;
+        window.history.back();
+      }
       previous?.focus?.({ preventScroll: true });
     };
   }, []);
@@ -106,7 +124,9 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
         dragElastic={{ top: 0.04, bottom: 0.6 }}
         onDragEnd={onDragEnd}
         className={cn(
-          "pb-safe absolute bottom-0 flex max-h-[90dvh] w-full max-w-[480px] flex-col rounded-t-3xl bg-surface-lowest shadow-md outline-none lg:static lg:max-h-[85dvh] lg:max-w-[560px] lg:rounded-3xl",
+          // z-10 + relative: sin esto el panel queda por debajo del velo y el menú se ve
+          // tapado y borroso apenas termina la animación de entrada.
+          "pb-safe absolute bottom-0 z-10 flex max-h-[90dvh] w-full max-w-[480px] flex-col rounded-t-3xl bg-surface-lowest shadow-md outline-none lg:relative lg:max-h-[85dvh] lg:max-w-[560px] lg:rounded-3xl",
           className,
         )}
       >

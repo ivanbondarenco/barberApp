@@ -1,8 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { expect, request as playwrightRequest, type APIRequestContext, type Browser, type Locator, type Page } from "@playwright/test";
 
-export const CLIENT = { phone: "+54 9 11 5555 0192", pin: "1234", name: "Tomás" };
-export const ADMIN = { email: "admin@dsstudio.com.ar", pin: "1234" };
+export const CLIENT = { email: "tomas.ferreyra@example.com", password: "demo1234", name: "Tomás" };
+export const ADMIN = { email: "admin@dsstudio.com.ar", password: "demo1234" };
 /**
  * Los códigos ahora son aleatorios y se mandan por WhatsApp. En los tests el servidor corre
  * con OTP_DEBUG=1 y devuelve el código en la respuesta: `captureOtp` lo lee de ahí.
@@ -38,7 +38,7 @@ export async function openShop(page: Page, slug = SHOP_SLUG) {
 export async function adminApi(slug = SHOP_SLUG): Promise<APIRequestContext> {
   const api = await playwrightRequest.newContext({ baseURL: BASE_URL });
   await api.get(`/b/${slug}`);
-  const res = await api.post("/api/auth/login", { data: { role: "admin", identifier: ADMIN.email, pin: ADMIN.pin } });
+  const res = await api.post("/api/auth/login", { data: { role: "staff", identifier: ADMIN.email, password: ADMIN.password } });
   expect(res.ok()).toBeTruthy();
   return api;
 }
@@ -56,22 +56,23 @@ export async function runCommand(api: APIRequestContext, command: Record<string,
   return { status: res.status(), body: await res.json() };
 }
 
-export async function loginAsClient(page: Page, phone = CLIENT.phone, pin = CLIENT.pin) {
-  await openShop(page);
-  await page.goto("/auth/login");
-  await page.getByLabel("Celular o email").fill(phone);
-  await page.getByLabel("PIN", { exact: true }).fill(pin);
+/** Completa el ingreso que se ve al abrir la app. `tab`: la solapa de cliente o de barbero. */
+export async function fillLogin(page: Page, tab: "cliente" | "barbero", identifier: string, password: string) {
+  await page.getByRole("tab", { name: tab === "cliente" ? "Soy cliente" : "Soy barbero" }).click();
+  await page.getByLabel(tab === "cliente" ? "Email" : "Celular o email").fill(identifier);
+  await page.getByLabel("Contraseña", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Ingresar" }).click();
+}
+
+export async function loginAsClient(page: Page, email = CLIENT.email, password = CLIENT.password) {
+  await page.goto("/");
+  await fillLogin(page, "cliente", email, password);
   await page.waitForURL("**/cliente/reservar");
 }
 
 export async function loginAsAdmin(page: Page) {
-  await openShop(page);
-  await page.goto("/auth/login");
-  await page.getByRole("tab", { name: "Soy barbero" }).click();
-  await page.getByLabel("Email").fill(ADMIN.email);
-  await page.getByLabel("PIN", { exact: true }).fill(ADMIN.pin);
-  await page.getByRole("button", { name: "Ingresar" }).click();
+  await page.goto("/");
+  await fillLogin(page, "barbero", ADMIN.email, ADMIN.password);
   await page.waitForURL("**/admin/agenda");
 }
 
@@ -93,7 +94,14 @@ export async function pageState(page: Page) {
   const res = await page.request.get("/api/state");
   return (await res.json()) as {
     version: number;
-    session: { role: string; name: string; clientId?: string; shop: { id: string; slug: string; name: string } } | null;
+    session: {
+      role: string;
+      name: string;
+      identifier: string;
+      clientId?: string;
+      shop: { id: string; slug: string; name: string };
+      shops?: { id: string; slug: string; name: string }[];
+    } | null;
     state: {
       services: { id: string; name: string; price: number; active: boolean }[];
       products: { id: string; name: string; stock: number }[];
@@ -101,7 +109,6 @@ export async function pageState(page: Page) {
       clients: { id: string; name: string; phone: string; credit: number }[];
       appointments: { id: string; clientId?: string; clientName: string; status: string; time: string; date: string; deposit: { status: string; method: string }; products: unknown[]; reminderSentAt?: string; holdUntil?: string; rating?: number; barberId: string }[];
       blocks: { id: string; reason: string }[];
-      cashRegister: { open: boolean };
       businessHours: { closed: boolean; open: string; close: string }[];
       businessInfo: { name: string; address: string; whatsapp: string };
       depositSettings: { allowCash: boolean; rate: number };
@@ -122,10 +129,56 @@ export async function pageState(page: Page) {
 export async function pickFirstSlot(scope: Page | ReturnType<Page["locator"]>) {
   const group = scope.getByRole("radiogroup", { name: "Horario" });
   await expect(group.getByRole("radio").first()).toBeVisible();
-  await group.getByRole("radio").first().click();
   const selected = group.getByRole("radio", { checked: true });
-  await expect(selected).toBeVisible();
+  // Si la sincronización rehace la lista justo después del click, el horario queda sin marcar:
+  // se vuelve a intentar hasta que uno quede elegido.
+  await expect(async () => {
+    await group.getByRole("radio").first().click();
+    await expect(selected).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   return (await selected.textContent())?.trim() ?? "";
+}
+
+const MONTH_LONG = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+/**
+ * Elige esa fecha en el calendario mensual, pasando al mes siguiente si hace falta.
+ *
+ * El cambio de mes se anima: hasta que la primera casilla no es del mes nuevo, las que están en
+ * pantalla siguen siendo las del anterior. Las casillas van en orden, una por día, así que la del
+ * día N es la enésima.
+ */
+export async function chooseCalendarDay(scope: Page | Locator, target: Date) {
+  const cells = scope.getByRole("radiogroup", { name: "Día" }).getByRole("radio");
+  const wanted = MONTH_LONG[target.getMonth()];
+  await expect(cells.first()).toBeVisible();
+  const visibleLabel = (await cells.first().getAttribute("aria-label")) ?? "";
+  if (!visibleLabel.includes(wanted)) {
+    const visible = MONTH_LONG.findIndex((m) => visibleLabel.includes(m));
+    const forward = (target.getMonth() - visible + 12) % 12 <= 6;
+    await scope.getByRole("button", { name: forward ? "Mes siguiente" : "Mes anterior" }).click();
+    await expect(cells.first()).toHaveAttribute("aria-label", new RegExp(wanted));
+  }
+  const cell = cells.nth(target.getDate() - 1);
+  await expect(cell).toBeEnabled();
+  await cell.click();
+  await expect(cell).toHaveAttribute("aria-checked", "true");
+}
+
+/** Elige el día que cae `daysAhead` días después de hoy, salteando el domingo (el local cierra). */
+export async function chooseDayAhead(scope: Page | Locator, daysAhead: number) {
+  const day = new Date();
+  day.setDate(day.getDate() + daysAhead);
+  while (day.getDay() === 0) day.setDate(day.getDate() + 1);
+  await chooseCalendarDay(scope, day);
+  return day;
+}
+
+/** Próximo domingo (el local cierra): sirve para probar los días sin atención. */
+export function nextSunday(): Date {
+  const day = new Date();
+  day.setDate(day.getDate() + ((7 - day.getDay()) % 7 || 7));
+  return day;
 }
 
 /** Espera a que desaparezcan los avisos y animaciones de entrada. */

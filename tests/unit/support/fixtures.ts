@@ -5,7 +5,6 @@ import {
   buildSeedAppointments,
   buildSeedBlocks,
   buildSeedClients,
-  buildSeedClosures,
   seedBusinessInfo,
   seedProducts,
   seedServices,
@@ -43,9 +42,7 @@ export function seedState(): DomainState {
     products: seedProducts,
     appointments: buildSeedAppointments(),
     blocks: buildSeedBlocks(),
-    cashClosures: buildSeedClosures(),
     depositSettings: { allowCash: true, rate: 0.5 },
-    cashRegister: { open: true, openedAt: "08:30" },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
     integrations: { mercadopagoReady: true, whatsappReady: true },
@@ -59,6 +56,7 @@ export function bookPayload(overrides: Partial<Parameters<typeof bookBase>[0]> =
 function bookBase(overrides: {
   id?: string;
   newClientId?: string;
+  clientId?: string;
   clientName?: string;
   clientPhone?: string;
   barberId?: string;

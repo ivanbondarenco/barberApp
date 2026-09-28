@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { rememberShop, startSession } from "@/server/auth";
-import { errorResponse, json, pinSchema, readBody } from "@/server/http";
+import { passwordSchema } from "@/lib/password";
+import { arPhoneSchema } from "@/lib/phone";
+import { errorResponse, json, readBody } from "@/server/http";
+import { notifyShopCreated } from "@/server/notify";
 import { createShop, listShops } from "@/server/repository";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +11,10 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   name: z.string().trim().min(3, "Ingresá el nombre de la barbería"),
   ownerName: z.string().trim().min(3, "Ingresá tu nombre"),
-  identifier: z.string().trim().min(3, "Ingresá tu celular o email"),
-  pin: pinSchema,
+  identifier: z.email("Ingresá un email válido"),
+  password: passwordSchema,
   address: z.string().trim().min(3, "Ingresá la dirección del local"),
-  whatsapp: z.string().trim().refine((v) => v.replace(/\D/g, "").length >= 10, "Celular inválido"),
+  whatsapp: arPhoneSchema,
   neighborhood: z.string().trim().optional(),
   email: z.union([z.literal(""), z.email("Email inválido")]).optional(),
 });
@@ -36,7 +39,7 @@ export async function POST(request: Request) {
       name: input.name,
       ownerName: input.ownerName,
       ownerIdentifier: input.identifier,
-      ownerPin: input.pin,
+      ownerPassword: input.password,
       address: input.address,
       whatsapp: input.whatsapp,
       neighborhood: input.neighborhood,
@@ -44,6 +47,7 @@ export async function POST(request: Request) {
     });
     await rememberShop(shop.slug);
     await startSession(userId);
+    notifyShopCreated({ name: input.ownerName, identifier: input.identifier }, shop.name, shop.slug);
     return json({ ok: true, shop });
   } catch (error) {
     return errorResponse(error);

@@ -2,15 +2,24 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Segmented } from "@/components/ui/Segmented";
-import { cn } from "@/lib/cn";
-import { addDays, dayNumber, dayShort, monthShort, todayISO } from "@/lib/dates";
+import { MonthCalendar } from "@/components/ui/MonthCalendar";
+import { addDays, monthGrid, sameMonth, todayISO } from "@/lib/dates";
 import { ease } from "@/lib/motion";
-import { buildSlots, openingHours, shiftOf, type Shift } from "@/lib/schedule";
+import {
+  buildSlots,
+  CLIENT_BOOKING_DAYS,
+  clientBookingLimit,
+  openingHours,
+  shiftOf,
+  type Shift,
+} from "@/lib/schedule";
+import { cn } from "@/lib/cn";
 import { useAppStore } from "@/store/useAppStore";
 
-const DAYS_AHEAD = 21;
+/** Hasta cuántos días adelante busca el primer día con lugar cuando agenda el local. */
+const STAFF_SEARCH_DAYS = 90;
 
 interface SlotPickerProps {
   barberId: string;
@@ -22,7 +31,12 @@ interface SlotPickerProps {
   excludeAppointmentId?: string;
 }
 
-/** Tira de días desplazable + horarios libres agrupados por turno. Solo muestra lo disponible. */
+/**
+ * Calendario del mes + horarios libres del día elegido, agrupados por turno.
+ *
+ * El cliente solo puede elegir dentro de las próximas dos semanas; el staff, cualquier día de
+ * acá en adelante. La misma regla la vuelve a controlar el servidor al guardar.
+ */
 export function SlotPicker({
   barberId,
   durationMin,
@@ -35,37 +49,53 @@ export function SlotPicker({
   const appointments = useAppStore((s) => s.appointments);
   const blocks = useAppStore((s) => s.blocks);
   const hours = useAppStore((s) => s.businessHours);
-  const stripRef = useRef<HTMLDivElement>(null);
+  const isClient = useAppStore((s) => s.session?.role === "cliente");
 
   const today = todayISO();
-  const days = useMemo(() => {
-    const list: { date: string; free: number }[] = [];
-    for (let i = 0; i < DAYS_AHEAD; i++) {
+  const maxDate = isClient ? clientBookingLimit() : undefined;
+  const [month, setMonth] = useState(date ?? today);
+
+  const slotsOf = useCallback(
+    (d: string) => buildSlots({ date: d, barberId, durationMin, appointments, blocks, hours, excludeAppointmentId }),
+    [barberId, durationMin, appointments, blocks, hours, excludeAppointmentId],
+  );
+
+  const inRange = useCallback((d: string) => d >= today && (!maxDate || d <= maxDate), [today, maxDate]);
+
+  /** Horarios libres por día del mes visible: pinta el calendario y decide qué día se puede tocar. */
+  const freeByDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const iso of monthGrid(month).flat()) {
+      if (!iso) continue;
+      map.set(iso, inRange(iso) ? slotsOf(iso).filter((s) => s.available).length : 0);
+    }
+    return map;
+  }, [month, inRange, slotsOf]);
+
+  const firstFreeDay = useMemo(() => {
+    const horizon = isClient ? CLIENT_BOOKING_DAYS : STAFF_SEARCH_DAYS;
+    for (let i = 0; i <= horizon; i++) {
       const d = addDays(today, i);
       if (!openingHours(d, hours)) continue;
-      const free = buildSlots({ date: d, barberId, durationMin, appointments, blocks, hours, excludeAppointmentId }).filter(
-        (s) => s.available,
-      ).length;
-      list.push({ date: d, free });
+      if (slotsOf(d).some((s) => s.available)) return d;
     }
-    return list;
-  }, [today, hours, barberId, durationMin, appointments, blocks, excludeAppointmentId]);
+    return null;
+  }, [isClient, today, hours, slotsOf]);
 
   // Si el día elegido no tiene lugar (o no hay día), salta al primero con horarios libres.
   useEffect(() => {
     if (time) return;
-    if (date && days.some((d) => d.date === date && d.free > 0)) return;
-    const first = days.find((d) => d.free > 0);
-    if (first && first.date !== date) onDateChange(first.date);
-  }, [date, time, days, onDateChange]);
+    if (date && inRange(date) && slotsOf(date).some((s) => s.available)) return;
+    if (firstFreeDay && firstFreeDay !== date) onDateChange(firstFreeDay);
+  }, [date, time, inRange, slotsOf, firstFreeDay, onDateChange]);
 
-  const slots = useMemo(
-    () =>
-      date
-        ? buildSlots({ date, barberId, durationMin, appointments, blocks, hours, excludeAppointmentId }).filter((s) => s.available)
-        : [],
-    [date, barberId, durationMin, appointments, blocks, hours, excludeAppointmentId],
-  );
+  // El calendario sigue al día elegido, venga de un click o de afuera (un turno que se mueve).
+  useEffect(() => {
+    if (date && !sameMonth(date, month)) setMonth(date);
+    // Solo cuando cambia el día.
+  }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const slots = useMemo(() => (date ? slotsOf(date).filter((s) => s.available) : []), [date, slotsOf]);
 
   const morning = slots.filter((s) => shiftOf(s.time) === "manana");
   const afternoon = slots.filter((s) => shiftOf(s.time) === "tarde");
@@ -82,40 +112,20 @@ export function SlotPicker({
     // Solo al cambiar de día.
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    stripRef.current?.querySelector('[aria-checked="true"]')?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [date]);
-
   const visible = shift === "manana" ? morning : afternoon;
 
   return (
     <div className="flex flex-col gap-4">
-      <div ref={stripRef} role="radiogroup" aria-label="Día" className="no-scrollbar -mx-5 flex snap-x gap-2 overflow-x-auto px-5 pb-1">
-        {days.map(({ date: d, free }) => {
-          const active = d === date;
-          return (
-            <button
-              key={d}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              disabled={free === 0}
-              onClick={() => onDateChange(d)}
-              className={cn(
-                "tap relative flex w-14 shrink-0 snap-center flex-col items-center rounded-2xl py-2.5 transition-colors",
-                active ? "bg-primary text-on-primary shadow-cta" : "bg-surface-lowest text-ink shadow-xs",
-                free === 0 && "opacity-40",
-              )}
-            >
-              <span className={cn("text-[11px] font-medium", active ? "text-on-primary/80" : "text-secondary")}>
-                {d === today ? "Hoy" : dayShort(d)}
-              </span>
-              <span className="text-lg font-bold leading-tight tabular-nums">{dayNumber(d)}</span>
-              <span className={cn("text-[10px]", active ? "text-on-primary/80" : "text-secondary")}>{monthShort(d)}</span>
-            </button>
-          );
-        })}
-      </div>
+      <MonthCalendar
+        month={month}
+        onMonthChange={setMonth}
+        selected={date}
+        onSelect={onDateChange}
+        markOf={(iso) => ({ count: freeByDay.get(iso) ?? 0, disabled: !freeByDay.get(iso) })}
+        minDate={today}
+        maxDate={maxDate}
+        hint={isClient ? `Podés reservar hasta ${CLIENT_BOOKING_DAYS / 7} semanas por adelantado.` : undefined}
+      />
 
       <Segmented
         label="Turno"

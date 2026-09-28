@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ChevronLeft, ChevronRight, Receipt, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { NAV, Page } from "@/components/motion/Page";
@@ -34,7 +34,6 @@ type Period = "dia" | "semana" | "mes";
 
 export default function FinanzasPage() {
   const appointments = useAppStore((s) => s.appointments);
-  const cashOpen = useAppStore((s) => s.cashRegister.open);
   const today = todayISO();
   const hours = useAppStore((s) => s.businessHours);
   // Si hoy el local está cerrado, se arranca en el próximo día abierto: el mismo criterio
@@ -222,17 +221,6 @@ export default function FinanzasPage() {
         </m.section>
         )}
       </AnimatePresence>
-
-      <Link href="/admin/finanzas/cierre" transitionTypes={[...NAV.forward]} className="tap row rounded-2xl bg-surface-lowest shadow-xs">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-fixed text-primary">
-          <Receipt size={19} aria-hidden />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-medium">Cierre de caja</span>
-          <span className="block text-[13px] text-secondary">{cashOpen ? "Caja abierta · hacé el arqueo al final del día" : "Caja cerrada"}</span>
-        </span>
-        <ChevronRight size={18} className="text-secondary" aria-hidden />
-      </Link>
 
       <Section title="Movimientos">
         {movements.length === 0 ? (

@@ -1,86 +1,57 @@
 import { z } from "zod";
 import { DomainError } from "@/lib/commands";
-import { phoneKey, uid } from "@/lib/format";
-import type { ClientProfile } from "@/lib/types";
+import { uid } from "@/lib/format";
+import { passwordSchema } from "@/lib/password";
 import { startSession, visitorShop } from "@/server/auth";
-import { hashPin, normalizeIdentifier } from "@/server/crypto";
-import { queryAll, queryOne } from "@/server/db";
-import { errorResponse, json, phoneSchema, pinSchema, readBody } from "@/server/http";
-import { consumeOtp, issueOtp } from "@/server/otp";
-import { ensureSeeded, mutate } from "@/server/repository";
+import { hashPassword, normalizeIdentifier } from "@/server/crypto";
+import { queryOne } from "@/server/db";
+import { errorResponse, json, phoneSchema, readBody } from "@/server/http";
+import { notifyClientRegistered } from "@/server/notify";
+import { ensureSeeded, joinShopTx, mutate } from "@/server/repository";
 
 const schema = z.object({
   name: z.string().trim().min(3, "Ingresá nombre y apellido"),
+  email: z.email("Email inválido"),
   phone: phoneSchema,
-  email: z.union([z.literal(""), z.email("Email inválido")]).optional(),
-  pin: pinSchema,
-  /** Sin código se envía uno por WhatsApp; con código se crea la cuenta. */
-  code: z.string().optional(),
+  password: passwordSchema,
 });
 
+const TAKEN = "Ya existe una cuenta con este email. Iniciá sesión.";
+
+/**
+ * Alta de un cliente. La cuenta es una sola para todas las barberías; si llegó por el link de
+ * un local, ya queda sumado a ese. Las demás las elige después.
+ */
 export async function POST(request: Request) {
   try {
     const input = await readBody(request, schema);
-    const shop = await visitorShop();
-    if (!shop) return json({ error: "Abrí el link de tu barbería para registrarte." }, 400);
-
-    const identifier = normalizeIdentifier(input.phone);
+    const identifier = normalizeIdentifier(input.email);
     const db = await ensureSeeded();
-
-    // El celular ya tomado se avisa antes de gastar un envío de WhatsApp.
-    if (queryOne(db, "SELECT id FROM users WHERE shop_id = ? AND identifier = ?", [shop.id, identifier])) {
-      return json({ error: "Ya existe una cuenta con este celular. Iniciá sesión." }, 409);
+    if (queryOne(db, "SELECT id FROM users WHERE role = 'cliente' AND identifier = ?", [identifier])) {
+      return json({ error: TAKEN }, 409);
     }
 
-    if (!input.code) {
-      const issued = await issueOtp(shop.id, identifier, "registro", input.phone);
-      return json({ sent: true, ...issued });
-    }
-
-    await consumeOtp(shop.id, identifier, "registro", input.code);
-
+    const shop = await visitorShop();
     const now = new Date().toISOString();
-    const userId = await mutate(
-      (d) => {
-        // Se vuelve a controlar dentro de la transacción: entre el código y el alta pudo
-        // registrarse otro con el mismo celular.
-        if (queryOne(d, "SELECT id FROM users WHERE shop_id = ? AND identifier = ?", [shop.id, identifier])) {
-          throw new DomainError("Ya existe una cuenta con este celular. Iniciá sesión.", 409);
-        }
-        // Si el local ya lo cargó como cliente (por ejemplo, un turno manual), se vincula ese perfil.
-        const existing = queryAll<{ id: string; data: string }>(d, "SELECT id, data FROM clients WHERE shop_id = ?", [
-          shop.id,
-        ]).find((row) => phoneKey((JSON.parse(row.data) as ClientProfile).phone) === phoneKey(input.phone));
-        const clientId = existing?.id ?? uid("c");
-        const profile: ClientProfile = existing
-          ? { ...(JSON.parse(existing.data) as ClientProfile), name: input.name, email: input.email || undefined }
-          : {
-              id: clientId,
-              name: input.name,
-              phone: input.phone,
-              email: input.email || undefined,
-              notifications: { reminder24h: true, whatsapp: true },
-              credit: 0,
-              createdAt: now,
-            };
-        d.run(
-          `INSERT INTO clients (shop_id, id, data, updated_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT(shop_id, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
-          [shop.id, clientId, JSON.stringify(profile), now],
-        );
-        const id = uid("u");
-        d.run(
-          `INSERT INTO users (id, shop_id, role, identifier, name, client_id, pin_hash, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, shop.id, "cliente", identifier, input.name, clientId, hashPin(input.pin), now],
-        );
-        return id;
-      },
-      { touchesState: shop.id },
-    );
+    const userId = await mutate((d) => {
+      // Se vuelve a controlar dentro de la transacción por si se registró otro con el mismo email.
+      if (queryOne(d, "SELECT id FROM users WHERE role = 'cliente' AND identifier = ?", [identifier])) {
+        throw new DomainError(TAKEN, 409);
+      }
+      const id = uid("u");
+      d.run(
+        `INSERT INTO users (id, shop_id, role, identifier, name, barber_id, phone, password_hash, created_at)
+         VALUES (?, NULL, 'cliente', ?, ?, NULL, ?, ?, ?)`,
+        [id, identifier, input.name, input.phone, hashPassword(input.password), now],
+      );
+      if (shop) joinShopTx(d, id, shop.id, { name: input.name, phone: input.phone, email: identifier }, now);
+      return id;
+    });
 
-    await startSession(userId);
-    return json({ ok: true });
+    await startSession(userId, shop?.id ?? null);
+    // Bienvenida y link para confirmar el email. Si no hay SMTP configurado, no pasa nada.
+    await notifyClientRegistered({ id: userId, name: input.name, email: identifier }, shop?.name);
+    return json({ ok: true, hasShop: !!shop });
   } catch (error) {
     return errorResponse(error);
   }

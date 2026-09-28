@@ -30,7 +30,7 @@ export default function AdminTurnoPage() {
   const appointment = useAppStore((s) => s.appointments.find((a) => a.id === id));
   const barber = useAppStore((s) => s.barbers.find((b) => b.id === appointment?.barberId));
   const products = useAppStore((s) => s.products);
-  const cashOpen = useAppStore((s) => s.cashRegister.open);
+  const info = useAppStore((s) => s.businessInfo);
 
   const [editOpen, setEditOpen] = useState(false);
   const [productsOpen, setProductsOpen] = useState(false);
@@ -61,11 +61,6 @@ export default function AdminTurnoPage() {
   // Recién se puede marcar ausente una vez que pasó la hora del turno.
   const started = hoursUntil(appointment.date, appointment.time) <= 0;
 
-  const openCharge = (mode: ChargeMode) => {
-    if (!cashOpen) return toast("Abrí la caja para registrar cobros", "error");
-    setCharging(mode);
-  };
-
   return (
     <Page className="pb-28">
       <div className="flex flex-col gap-5 px-5 pt-2">
@@ -94,21 +89,26 @@ export default function AdminTurnoPage() {
           ) : (
             <span className="min-w-0 flex-1 py-1">
               <span className="block truncate text-[15px] font-semibold">{appointment.clientName}</span>
-              <span className="block text-[13px] text-secondary">{appointment.clientPhone}</span>
+              <span className="block text-[13px] text-secondary">{appointment.clientPhone || "Cliente sin app"}</span>
             </span>
           )}
-          <a href={`tel:${appointment.clientPhone.replace(/\s/g, "")}`} aria-label="Llamar" className="icon-btn bg-surface-low text-primary">
-            <Phone size={18} />
-          </a>
-          <a
-            href={whatsappLink(appointment.clientPhone, `Hola ${appointment.clientName.split(" ")[0]}, te escribimos de D.S Studio por tu turno de las ${appointment.time}.`)}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="WhatsApp"
-            className="icon-btn bg-surface-low text-primary"
-          >
-            <Smartphone size={18} />
-          </a>
+          {/* Un turno "sin app" no tiene celular: no hay a quién llamar ni escribir. */}
+          {!!appointment.clientPhone.trim() && (
+            <>
+              <a href={`tel:${appointment.clientPhone.replace(/\s/g, "")}`} aria-label="Llamar" className="icon-btn bg-surface-low text-primary">
+                <Phone size={18} />
+              </a>
+              <a
+                href={whatsappLink(appointment.clientPhone, `Hola ${appointment.clientName.split(" ")[0]}, te escribimos de ${info.name} por tu turno de las ${appointment.time}.`)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="WhatsApp"
+                className="icon-btn bg-surface-low text-primary"
+              >
+                <Smartphone size={18} />
+              </a>
+            </>
+          )}
         </div>
 
         {/* Cuenta */}
@@ -246,7 +246,7 @@ export default function AdminTurnoPage() {
           animate={{ y: 0, transition: spring.sheet }}
           className="sticky bottom-0 z-10 mt-auto border-t border-surface-high bg-surface-lowest/95 px-5 py-3 backdrop-blur-xl"
         >
-          <button type="button" onClick={() => openCharge(depositPaid ? "balance" : "deposit")} className="tap btn-primary text-[15px]">
+          <button type="button" onClick={() => setCharging(depositPaid ? "balance" : "deposit")} className="tap btn-primary text-[15px]">
             {depositPaid ? `Cobrar ${money(t.dueAtChair)}` : `Registrar seña ${money(t.deposit)}`}
           </button>
         </m.div>

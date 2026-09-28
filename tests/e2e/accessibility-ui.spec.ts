@@ -4,12 +4,11 @@ import { expectAccessible, expectNoHorizontalOverflow, loginAsAdmin, loginAsClie
 test.beforeAll(resetData);
 
 const PUBLIC_PAGES = ["/auth/login", "/auth/registro", "/auth/recuperar", "/auth/nueva-barberia", "/politicas", "/ayuda", "/offline"];
-const CLIENT_PAGES = ["/cliente/reservar", "/cliente/mis-turnos", "/cliente/turno/a-demo-client", "/cliente/tienda", "/cliente/perfil", "/cliente/historial"];
+const CLIENT_PAGES = ["/cliente/reservar", "/cliente/mis-turnos", "/cliente/turno/a-demo-client", "/cliente/tienda", "/cliente/perfil", "/cliente/historial", "/cliente/barberias"];
 const ADMIN_PAGES = [
   "/admin/agenda",
   "/admin/turno/a-lucas",
   "/admin/finanzas",
-  "/admin/finanzas/cierre",
   "/admin/servicios",
   "/admin/tienda",
   "/admin/clientes",

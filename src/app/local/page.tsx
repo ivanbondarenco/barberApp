@@ -49,7 +49,7 @@ export default function LocalPage() {
 
   if (!hydrated || !shop) return <ScreenLoader />;
 
-  const reservarHref = session ? homeFor(session.role) : "/auth/login";
+  const reservarHref = session ? homeFor(session) : "/auth/login";
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-surface shadow-md lg:my-8 lg:min-h-0 lg:max-w-[720px] lg:rounded-3xl">

@@ -1,6 +1,6 @@
 export type Role = "cliente" | "barbero" | "admin";
 
-/** Roles que operan el local. `admin` es dueño: además maneja caja, catálogo y equipo. */
+/** Roles que operan el local. `admin` es dueño: además maneja catálogo, equipo y configuración. */
 export type StaffRole = Extract<Role, "barbero" | "admin">;
 
 export const isStaff = (role: Role): role is StaffRole => role === "admin" || role === "barbero";
@@ -26,8 +26,15 @@ export interface Session {
   clientId?: string;
   /** Solo rol `barbero`: sillón que opera. Acota su agenda y sus cobros. */
   barberId?: string;
-  /** Barbería a la que pertenece la sesión. */
-  shop: Shop;
+  /**
+   * Barbería sobre la que opera la sesión. El staff siempre tiene la suya; un cliente, la que
+   * eligió entre las suyas, o `null` si todavía no se sumó a ninguna.
+   */
+  shop: Shop | null;
+  /** Solo clientes: las barberías en las que se atiende. */
+  shops?: Shop[];
+  /** Ya confirmó su email desde el link que le mandamos. */
+  emailVerified?: boolean;
 }
 
 export interface ClientProfile {
@@ -44,7 +51,7 @@ export interface ClientProfile {
   credit: number;
   /** Nota interna del local (solo visible para el staff). */
   internalNotes?: string;
-  /** true si el cliente tiene cuenta con PIN (lo informa el servidor). */
+  /** true si el cliente tiene cuenta en la app (lo informa el servidor). */
   hasAccount?: boolean;
   createdAt: string;
 }
@@ -200,11 +207,6 @@ export interface IntegrationSettings {
   whatsappReady: boolean;
 }
 
-export interface CashRegister {
-  open: boolean;
-  openedAt?: string;
-}
-
 export interface DayHours {
   open: string;
   close: string;
@@ -223,16 +225,4 @@ export interface BusinessInfo {
   instagram: string;
   transferAlias: string;
   transferCbu: string;
-}
-
-export interface CashClosure {
-  id: string;
-  date: string;
-  openedAt?: string;
-  closedAt: string;
-  expectedCash: number;
-  countedCash: number;
-  digital: number;
-  total: number;
-  notes?: string;
 }

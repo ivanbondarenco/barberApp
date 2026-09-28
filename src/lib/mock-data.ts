@@ -6,7 +6,6 @@ import type {
   AppointmentProduct,
   Barber,
   BusinessInfo,
-  CashClosure,
   ClientProfile,
   PaymentMethod,
   Product,
@@ -18,7 +17,7 @@ export const DEMO_CLIENT = {
   id: "c-demo",
   name: "Tomás Ferreyra",
   phone: "+54 9 11 5555-0192",
-  email: "tomas.ferreyra@gmail.com",
+  email: "tomas.ferreyra@example.com",
 };
 
 export const DEMO_ADMIN = {
@@ -172,8 +171,8 @@ export const seedProducts: Product[] = [
   },
 ];
 
-/** PIN de las cuentas demo (cliente y admin). */
-export const DEMO_PIN = "1234";
+/** Contraseña de las cuentas demo (cliente y admin). */
+export const DEMO_PASSWORD = "demo1234";
 
 const WALK_IN_CLIENTS = [
   { id: "c-mateo", name: "Mateo Rossi", phone: "+54 9 11 4321-8890", internalNotes: "Cliente frecuente, prefiere turno de mañana." },
@@ -461,19 +460,3 @@ export function buildSeedBlocks(): TimeBlock[] {
   ];
 }
 
-export function buildSeedClosures(): CashClosure[] {
-  const yesterday = pastOpenDay(todayISO(), 1);
-  return [
-    {
-      id: "cc-ayer",
-      date: yesterday,
-      openedAt: "08:30",
-      closedAt: new Date(`${yesterday}T20:15:00`).toISOString(),
-      expectedCash: 7500,
-      countedCash: 7500,
-      digital: 0,
-      total: 7500,
-      notes: "Sin diferencias.",
-    },
-  ];
-}

@@ -17,7 +17,7 @@ const jakarta = Plus_Jakarta_Sans({
 // lo pone <ShopTitle /> cuando llega el estado, y el manifiesto se arma por pedido.
 export const metadata: Metadata = {
   title: {
-    default: "Turnos de barbería",
+    default: "BarberApp",
     template: "%s",
   },
   description: "Reservá tu turno, aboná la seña y sumá productos para retirar en el sillón.",

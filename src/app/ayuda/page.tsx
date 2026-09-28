@@ -49,7 +49,7 @@ export default function AyudaPage() {
       <div className="flex flex-col gap-2.5 px-4 py-3">
         <section className="card grid grid-cols-2 gap-2 p-3" aria-label="Contacto">
           <a
-            href={whatsappLink(info.whatsapp, "Hola D.S Studio, necesito ayuda con mi turno")}
+            href={whatsappLink(info.whatsapp, `Hola ${info.name}, necesito ayuda con mi turno`)}
             target="_blank"
             rel="noreferrer"
             className="tap col-span-2 flex items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary shadow-sm"

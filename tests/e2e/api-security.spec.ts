@@ -7,7 +7,7 @@ test.beforeAll(resetData);
 
 async function clientApi() {
   const api = await playwrightRequest.newContext({ baseURL: BASE_URL });
-  const res = await api.post("/api/auth/login", { data: { role: "cliente", identifier: CLIENT.phone, pin: CLIENT.pin } });
+  const res = await api.post("/api/auth/login", { data: { role: "cliente", identifier: CLIENT.email, password: CLIENT.password } });
   expect(res.ok()).toBeTruthy();
   return api;
 }
@@ -19,9 +19,8 @@ test("sin sesión: datos públicos y comandos rechazados", async ({ request }) =
   expect(body.session).toBeNull();
   expect(body.state.clients).toEqual([]);
   expect(body.state.appointments).toEqual([]);
-  expect(body.state.cashClosures).toEqual([]);
 
-  const cmd = await request.post("/api/commands", { data: { command: { type: "cash.open" } } });
+  const cmd = await request.post("/api/commands", { data: { command: { type: "demo.reset" } } });
   expect(cmd.status()).toBe(401);
 });
 
@@ -88,8 +87,8 @@ test("valida entradas y reglas en el servidor", async ({ request }) => {
   });
   expect(clash.status).toBe(409);
 
-  const badPin = await request.post("/api/auth/login", { data: { role: "admin", identifier: "x@y.z", pin: "12" } });
-  expect(badPin.status()).toBe(422);
+  const noPassword = await request.post("/api/auth/login", { data: { role: "staff", identifier: "x@y.z", password: "" } });
+  expect(noPassword.status()).toBe(422);
   await admin.dispose();
 });
 

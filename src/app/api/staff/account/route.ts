@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { passwordSchema } from "@/lib/password";
 import { getCurrentUser, type UserRow } from "@/server/auth";
-import { hashPin, normalizeIdentifier } from "@/server/crypto";
+import { hashPassword, normalizeIdentifier } from "@/server/crypto";
 import { queryOne } from "@/server/db";
-import { errorResponse, json, pinSchema, readBody } from "@/server/http";
-import { ensureSeeded, mutate } from "@/server/repository";
+import { errorResponse, json, readBody } from "@/server/http";
+import { ensureSeeded, mutate, staffByIdentifier } from "@/server/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +12,11 @@ const schema = z.object({
   barberId: z.string().min(1),
   /** Email o celular con el que entra el barbero. Vacío elimina su acceso. */
   identifier: z.string().trim().default(""),
-  pin: pinSchema.optional(),
+  password: passwordSchema.optional(),
 });
 
 /**
- * Alta, cambio de PIN o baja del acceso de un barbero. Solo el dueño.
+ * Alta, cambio de contraseña o baja del acceso de un barbero. Solo el dueño.
  *
  * El acceso vive en `users`, no en el estado de dominio: un barbero es una persona que entra
  * a la app, distinto del sillón que aparece en la agenda.
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     if (current.actor.role !== "admin") return json({ error: "Acción reservada al dueño del local" }, 403);
 
     const shopId = current.actor.shopId;
-    const { barberId, identifier, pin } = await readBody(request, schema);
+    const { barberId, identifier, password } = await readBody(request, schema);
     const db = await ensureSeeded();
     if (!queryOne(db, "SELECT id FROM barbers WHERE shop_id = ? AND id = ?", [shopId, barberId])) {
       return json({ error: "El barbero no existe" }, 404);
@@ -46,11 +47,11 @@ export async function POST(request: Request) {
     }
 
     const key = normalizeIdentifier(identifier);
-    const taken = queryOne<UserRow>(db, "SELECT * FROM users WHERE shop_id = ? AND identifier = ?", [shopId, key]);
-    if (taken && taken.barber_id !== barberId) {
-      return json({ error: "Ese email o celular ya está en uso por otra cuenta" }, 409);
+    // Un barbero trabaja en una sola barbería: el dato no puede estar en uso en ninguna otra.
+    if (staffByIdentifier(db, key).some((u) => u.id !== existing?.id)) {
+      return json({ error: "Ese email o celular ya está en uso por otra cuenta de barbería" }, 409);
     }
-    if (!existing && !pin) return json({ error: "Elegí un PIN inicial de 4 dígitos" }, 422);
+    if (!existing && !password) return json({ error: "Elegí una contraseña inicial" }, 422);
 
     const name = queryOne<{ data: string }>(db, "SELECT data FROM barbers WHERE shop_id = ? AND id = ?", [shopId, barberId]);
     const barberName = name ? (JSON.parse(name.data) as { name: string }).name : "Barbero";
@@ -59,17 +60,17 @@ export async function POST(request: Request) {
     await mutate((d) => {
       if (existing) {
         d.run("UPDATE users SET identifier = ?, name = ? WHERE id = ?", [key, barberName, existing.id]);
-        if (pin) {
-          d.run("UPDATE users SET pin_hash = ? WHERE id = ?", [hashPin(pin), existing.id]);
-          // Cambiar el PIN cierra las sesiones abiertas de esa cuenta.
+        if (password) {
+          d.run("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(password), existing.id]);
+          // Cambiar la contraseña cierra las sesiones abiertas de esa cuenta.
           d.run("DELETE FROM sessions WHERE user_id = ?", [existing.id]);
         }
         return;
       }
       d.run(
-        `INSERT INTO users (id, shop_id, role, identifier, name, client_id, barber_id, pin_hash, created_at)
-         VALUES (?, ?, 'barbero', ?, ?, NULL, ?, ?, ?)`,
-        [`u-${shopId}-${barberId}`, shopId, key, barberName, barberId, hashPin(pin!), stamp],
+        `INSERT INTO users (id, shop_id, role, identifier, name, barber_id, password_hash, created_at)
+         VALUES (?, ?, 'barbero', ?, ?, ?, ?, ?)`,
+        [`u-${shopId}-${barberId}`, shopId, key, barberName, barberId, hashPassword(password!), stamp],
       );
     }, { touchesState: shopId });
 

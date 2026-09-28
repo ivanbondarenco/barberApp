@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAsClient, pageState, resetData } from "./helpers";
+import { CLIENT, loginAsClient, pageState, resetData } from "./helpers";
 
 test.beforeAll(resetData);
 test.beforeEach(async ({ page }) => loginAsClient(page));
@@ -57,24 +57,27 @@ test("activa y desactiva avisos", async ({ page }) => {
   await expect(page.getByRole("switch", { name: "Novedades de la tienda" })).toHaveCount(0);
 });
 
-test("cambia el PIN y vuelve a ingresar", async ({ page }) => {
+test("cambia la contraseña y vuelve a ingresar", async ({ page }) => {
   await page.goto("/cliente/perfil");
-  await page.getByRole("button", { name: "Cambiar PIN" }).click();
-  const sheet = page.getByRole("dialog", { name: "Cambiar PIN" });
-  await sheet.getByLabel("PIN actual").fill("9999");
-  await sheet.getByLabel("Nuevo PIN").fill("2468");
-  await sheet.getByRole("button", { name: "Actualizar PIN" }).click();
-  await expect(sheet.getByText("El PIN actual no es correcto")).toBeVisible();
-  await sheet.getByLabel("PIN actual").fill("1234");
-  await sheet.getByRole("button", { name: "Actualizar PIN" }).click();
+  await page.getByRole("button", { name: "Cambiar contraseña" }).click();
+  const sheet = page.getByRole("dialog", { name: "Cambiar contraseña" });
+  await sheet.getByLabel("Contraseña actual").fill("no-es-esta");
+  await sheet.getByLabel("Contraseña nueva").fill("corta");
+  await sheet.getByRole("button", { name: "Cambiar contraseña" }).click();
+  await expect(sheet.getByText("Usá al menos 8 caracteres")).toBeVisible();
+  await sheet.getByLabel("Contraseña nueva").fill("tomas-nueva-2026");
+  await sheet.getByRole("button", { name: "Cambiar contraseña" }).click();
+  await expect(sheet.getByText("La contraseña actual no es correcta")).toBeVisible();
+  await sheet.getByLabel("Contraseña actual").fill(CLIENT.password);
+  await sheet.getByRole("button", { name: "Cambiar contraseña" }).click();
   await expect(sheet).toBeHidden();
 
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await page.waitForURL("**/auth/login");
-  await loginAsClient(page, "+54 9 11 5555 0192", "2468");
+  await loginAsClient(page, CLIENT.email, "tomas-nueva-2026");
 
-  // Restaura el PIN demo para el resto de los tests.
-  const res = await page.request.post("/api/auth/pin", { data: { currentPin: "2468", newPin: "1234" } });
+  // Restaura la contraseña demo para el resto de los tests.
+  const res = await page.request.post("/api/auth/password", { data: { current: "tomas-nueva-2026", next: CLIENT.password } });
   expect(res.ok()).toBeTruthy();
 });
 

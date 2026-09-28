@@ -1,15 +1,18 @@
 import { Scissors } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-/** Monograma circular D.S Studio (navy, sin negro puro). */
+/**
+ * Sello de BarberApp, la aplicación. No es la marca de ninguna barbería: cada local se
+ * identifica por su nombre y sus datos, que salen de su propia configuración.
+ */
 export function LogoSeal({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 120 120" className={className} role="img" aria-label="D.S Studio Barbería">
+    <svg viewBox="0 0 120 120" className={className} role="img" aria-label="BarberApp">
       <circle cx="60" cy="60" r="60" fill="#101C36" />
       <circle cx="60" cy="60" r="52" fill="none" stroke="#DCE1FF" strokeOpacity="0.25" strokeWidth="1" />
       <text
         x="60"
-        y="30"
+        y="32"
         textAnchor="middle"
         fontSize="7"
         letterSpacing="2"
@@ -17,32 +20,32 @@ export function LogoSeal({ className }: { className?: string }) {
         fontFamily="ui-sans-serif, system-ui"
         fontWeight="700"
       >
-        BARBERSHOP
+        TURNOS
       </text>
       <text
         x="60"
         y="74"
         textAnchor="middle"
-        fontSize="40"
+        fontSize="38"
         fill="#FFFFFF"
         fontFamily="Georgia, 'Times New Roman', serif"
         fontWeight="600"
         letterSpacing="-1"
       >
-        DS
+        BA
       </text>
       <line x1="30" y1="84" x2="90" y2="84" stroke="#DCE1FF" strokeOpacity="0.5" strokeWidth="0.8" />
       <text
         x="60"
         y="95"
         textAnchor="middle"
-        fontSize="7"
+        fontSize="7.5"
         letterSpacing="1.6"
         fill="#DCE1FF"
         fontFamily="ui-sans-serif, system-ui"
         fontWeight="600"
       >
-        STUDIO · BARBERÍA
+        BARBERAPP
       </text>
     </svg>
   );

@@ -23,8 +23,6 @@ export async function readBody<T>(request: Request, schema: z.ZodType<T>): Promi
   return schema.parse(raw);
 }
 
-export const pinSchema = z.string().regex(/^\d{4}$/, "El PIN tiene 4 dígitos");
-
 export const phoneSchema = z
   .string()
   .trim()

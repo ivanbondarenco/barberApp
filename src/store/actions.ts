@@ -2,7 +2,7 @@
 
 import type { AppointmentPatch, BookPayload, Command } from "@/lib/commands";
 import { uid } from "@/lib/format";
-import type { Barber, BusinessInfo, CashClosure, ClientProfile, DayHours, PaymentMethod, Product, Service, TimeBlock } from "@/lib/types";
+import type { Barber, BusinessInfo, ClientProfile, DayHours, PaymentMethod, Product, Service, TimeBlock } from "@/lib/types";
 import { useAppStore, type Result } from "./useAppStore";
 import { toast, undoToast } from "./useToast";
 
@@ -117,11 +117,6 @@ export const updateHours = (dayIndex: number, patch: Partial<DayHours>) => runWi
 export const updateBusinessInfo = (patch: Partial<BusinessInfo>) =>
   runWithFeedback({ type: "settings.info", patch }, "Datos del negocio guardados");
 
-export const openCash = () => runWithFeedback({ type: "cash.open" }, "Caja abierta");
-
-export const closeCash = (closure: Omit<CashClosure, "id" | "openedAt" | "closedAt">) =>
-  runWithFeedback({ type: "cash.close", closure: { ...closure, id: uid("cc") } }, "Caja cerrada");
-
 // ───────── Pagos y cuentas (fuera del estado de dominio) ─────────
 
 /**
@@ -161,8 +156,8 @@ async function post(url: string, body: unknown): Promise<Result> {
   }
 }
 
-/** Alta, cambio de PIN o baja del acceso de un barbero. */
-export async function saveStaffAccount(input: { barberId: string; identifier: string; pin?: string }): Promise<Result> {
+/** Alta, cambio de contraseña o baja del acceso de un barbero. */
+export async function saveStaffAccount(input: { barberId: string; identifier: string; password?: string }): Promise<Result> {
   const result = await post("/api/staff/account", input);
   if (!result.ok) toast(result.error, "error");
   else toast(input.identifier ? "Acceso del barbero actualizado" : "Acceso eliminado", "success");

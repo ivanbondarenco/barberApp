@@ -1,16 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { loginAsAdmin, pageState, pickFirstSlot, resetData } from "./helpers";
+import { chooseCalendarDay, chooseDayAhead, loginAsAdmin, nextSunday, pageState, pickFirstSlot, resetData } from "./helpers";
 
 test.beforeAll(resetData);
 test.beforeEach(async ({ page }) => loginAsAdmin(page));
 
-test("la agenda del día muestra turnos, bloqueos y estado de caja", async ({ page }) => {
+test("la agenda del día muestra turnos y bloqueos", async ({ page }) => {
   for (const name of ["Mateo Rossi", "Lucas Gómez", "Julián Pérez", "Santiago Díaz", "Martín López"]) {
     await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible();
   }
   await expect(page.getByRole("button", { name: /Almuerzo/ })).toBeVisible();
   await expect(page.getByText("5 turnos")).toBeVisible();
-  await expect(page.getByRole("main").getByRole("button", { name: /Caja abierta/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Julián Pérez/ })).toContainText("Seña pendiente");
 });
 
@@ -20,8 +19,9 @@ test("carga un turno manual, registra la seña, suma un producto y cobra", async
   await form.getByRole("button", { name: /^Agendar/ }).click();
   await expect(form.getByText(/Elegí servicio, día y horario|Ingresá el nombre/)).toBeVisible();
 
-  await form.getByLabel("Cliente").fill("Walk In Test");
-  await form.getByLabel("Celular").fill("+54 9 11 1234 5678");
+  await form.getByRole("tab", { name: "Cliente sin app" }).click();
+  await form.getByLabel("Cliente", { exact: true }).fill("Walk In Test");
+  await form.getByLabel("Celular (opcional)").fill("+54 9 11 1234 5678");
   await form.getByLabel("Servicio").selectOption({ label: "Corte Clásico Tijera" });
   const time = await pickFirstSlot(form);
   await form.getByRole("button", { name: `Agendar ${time} hs` }).click();
@@ -90,25 +90,6 @@ test("bloquea un horario y lo vuelve a liberar", async ({ page }) => {
   expect((await pageState(page)).state.blocks.some((b) => b.reason === "Capacitación")).toBe(false);
 });
 
-test("con la caja cerrada no se puede cobrar; el cierre registra el arqueo", async ({ page }) => {
-  await page.getByRole("main").getByRole("button", { name: /Caja abierta/ }).click();
-  await page.waitForURL("**/admin/finanzas/cierre");
-  await page.getByLabel("Contado").fill("5000");
-  await expect(page.getByText("Faltante")).toBeVisible();
-  await page.getByRole("button", { name: "Cerrar caja" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Cerrar caja" }).click();
-  await expect(page.getByText("La caja está cerrada")).toBeVisible();
-
-  await page.goto("/admin/turno/a-mateo");
-  await page.getByRole("button", { name: /^Cobrar/ }).click();
-  await expect(page.getByText("Abrí la caja para registrar cobros")).toBeVisible();
-
-  await page.goto("/admin/agenda");
-  await page.getByRole("main").getByRole("button", { name: /Caja cerrada/ }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Abrir caja" }).click();
-  await expect(page.getByRole("main").getByRole("button", { name: /Caja abierta/ })).toBeVisible();
-});
-
 test("finanzas muestra lo cobrado y los movimientos", async ({ page }) => {
   await page.goto("/admin/finanzas");
   await expect(page.getByText(/Cobrado ·/)).toBeVisible();
@@ -116,10 +97,77 @@ test("finanzas muestra lo cobrado y los movimientos", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Mateo Rossi/ })).toBeVisible();
 });
 
-test("la agenda cambia de día y de semana", async ({ page }) => {
+test("la agenda muestra el mes entero y cambia de día y de mes", async ({ page }) => {
   const days = page.getByRole("radiogroup", { name: "Día" }).getByRole("radio");
+  // Un mes tiene 28 días o más: el calendario los muestra todos.
+  expect(await days.count()).toBeGreaterThanOrEqual(28);
   await days.nth(2).click();
   await expect(days.nth(2)).toHaveAttribute("aria-checked", "true");
-  await page.getByRole("button", { name: "Semana siguiente" }).click();
+  await page.getByRole("button", { name: "Mes siguiente" }).click();
   await expect(page.getByText(/Día libre|turnos/).first()).toBeVisible();
+  // El local no tiene tope de fecha: también puede volver a meses pasados.
+  await page.getByRole("button", { name: "Mes anterior" }).click();
+  await page.getByRole("button", { name: "Mes anterior" }).click();
+  await expect(days.first()).toBeVisible();
+});
+
+test("al elegir una fecha aparecen las acciones de ese día", async ({ page }) => {
+  const calendar = page.getByRole("radiogroup", { name: "Día" });
+
+  // Un día que ya pasó queda solo para consulta (salvo que hoy sea el primero del mes).
+  if (new Date().getDate() > 1) {
+    await calendar.getByRole("radio").first().click();
+    await expect(page.getByText(/ya pasó/)).toBeVisible();
+  }
+
+  // Pasado mañana (o el lunes, si cae domingo): día abierto y futuro.
+  await chooseDayAhead(page, 2);
+
+  await expect(page.getByRole("button", { name: "Cargar turno" })).toBeVisible();
+  await page.getByRole("button", { name: "Cargar turno" }).click();
+  const form = page.getByRole("dialog", { name: "Nuevo turno" });
+  await expect(form).toBeVisible();
+  await form.getByRole("button", { name: "Cerrar" }).click();
+  await expect(form).toBeHidden();
+
+  // El próximo domingo el local cierra: no hay nada que agendar y se explica por qué.
+  await chooseCalendarDay(page, nextSunday());
+  await expect(page.getByText("Ese día el local está cerrado", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cargar turno" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Bloquear horario" })).toBeHidden();
+
+});
+
+test("agenda a un cliente de la app eligiéndolo del buscador", async ({ page }) => {
+  await page.getByRole("button", { name: "Turno", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Nuevo turno" });
+  await form.getByLabel("Buscar cliente").fill("Mateo");
+  await form.getByRole("button", { name: /Mateo Rossi/ }).click();
+  await expect(form.getByRole("button", { name: "Cambiar" })).toBeVisible();
+
+  await form.getByLabel("Servicio").selectOption({ label: "Corte Clásico Tijera" });
+  const time = await pickFirstSlot(form);
+  await form.getByRole("button", { name: `Agendar ${time} hs` }).click();
+  await expect(form).toBeHidden();
+
+  const state = (await pageState(page)).state;
+  const mateo = state.clients.find((c) => c.name === "Mateo Rossi")!;
+  const created = state.appointments.find((a) => a.clientId === mateo.id && a.time === time)!;
+  expect(created.clientName).toBe("Mateo Rossi");
+});
+
+test("un cliente sin app se carga solo con el nombre y no abre ficha", async ({ page }) => {
+  await page.getByRole("button", { name: "Turno", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Nuevo turno" });
+  await form.getByRole("tab", { name: "Cliente sin app" }).click();
+  await form.getByLabel("Cliente", { exact: true }).fill("Pasó a preguntar");
+  await form.getByLabel("Servicio").selectOption({ label: "Corte Clásico Tijera" });
+  const time = await pickFirstSlot(form);
+  await form.getByRole("button", { name: `Agendar ${time} hs` }).click();
+  await expect(form).toBeHidden();
+
+  const state = (await pageState(page)).state;
+  const created = state.appointments.find((a) => a.clientName === "Pasó a preguntar")!;
+  expect(created.clientId).toBeUndefined();
+  expect(state.clients.some((c) => c.name === "Pasó a preguntar")).toBe(false);
 });

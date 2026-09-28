@@ -6,22 +6,22 @@ import {
   buildSeedAppointments,
   buildSeedBlocks,
   buildSeedClients,
-  buildSeedClosures,
   DEMO_ADMIN,
   DEMO_CLIENT,
-  DEMO_PIN,
+  DEMO_PASSWORD,
   seedBusinessInfo,
   seedProducts,
   seedServices,
 } from "@/lib/mock-data";
-import { initials, uid } from "@/lib/format";
+import { initials, phoneKey, uid } from "@/lib/format";
 import { DEFAULT_DEPOSIT_RATE } from "@/lib/pricing";
 import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
-import type { Shop } from "@/lib/types";
-import { hashPin, normalizeIdentifier } from "./crypto";
+import type { ClientProfile, Shop } from "@/lib/types";
+import { hashPassword, normalizeIdentifier } from "./crypto";
 import { getDb, LEGACY_SHOP_ID, persist, queryAll, queryOne, transaction } from "./db";
+import { notifyAppointment } from "./notify";
 
-type Collection = "clients" | "barbers" | "services" | "products" | "appointments" | "blocks" | "cashClosures";
+type Collection = "clients" | "barbers" | "services" | "products" | "appointments" | "blocks";
 const TABLES: Record<Collection, string> = {
   clients: "clients",
   barbers: "barbers",
@@ -29,9 +29,8 @@ const TABLES: Record<Collection, string> = {
   products: "products",
   appointments: "appointments",
   blocks: "blocks",
-  cashClosures: "cash_closures",
 };
-const SETTINGS = ["depositSettings", "cashRegister", "businessHours", "businessInfo"] as const;
+const SETTINGS = ["depositSettings", "businessHours", "businessInfo"] as const;
 
 /** Un estado cacheado por barbería; la versión de cada una avanza por su lado. */
 const cache = new Map<string, { version: number; state: DomainState }>();
@@ -63,9 +62,9 @@ function readState(db: Database, shopId: string): DomainState {
   };
 
   const withIds = new Set(
-    queryAll<{ client_id: string }>(db, "SELECT client_id FROM users WHERE shop_id = ? AND client_id IS NOT NULL", [
-      shopId,
-    ]).map((r) => r.client_id),
+    queryAll<{ client_id: string }>(db, "SELECT client_id FROM memberships WHERE shop_id = ?", [shopId]).map(
+      (r) => r.client_id,
+    ),
   );
   const staffAccounts = new Map(
     queryAll<{ barber_id: string; identifier: string }>(
@@ -100,11 +99,7 @@ function readState(db: Database, shopId: string): DomainState {
     products: rows(TABLES.products),
     appointments: rows(TABLES.appointments),
     blocks: rows(TABLES.blocks),
-    cashClosures: rows<DomainState["cashClosures"][number] & { id?: string }>(TABLES.cashClosures).sort((a, b) =>
-      b.closedAt.localeCompare(a.closedAt),
-    ),
     depositSettings: setting("depositSettings") ?? { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
-    cashRegister: setting("cashRegister") ?? { open: false },
     businessHours: setting("businessHours") ?? DEFAULT_BUSINESS_HOURS,
     businessInfo: setting("businessInfo") ?? seedBusinessInfo,
     // Derivado, nunca persistido: solo dice si la barbería tiene credenciales, jamás cuáles.
@@ -191,9 +186,7 @@ function emptyState(): DomainState {
     products: [],
     appointments: [],
     blocks: [],
-    cashClosures: [],
     depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
-    cashRegister: { open: false },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
     integrations: { mercadopagoReady: false, whatsappReady: false },
@@ -208,9 +201,7 @@ function seedData(): DomainState {
     products: seedProducts,
     appointments: buildSeedAppointments(),
     blocks: buildSeedBlocks(),
-    cashClosures: buildSeedClosures().map((c) => ({ ...c })),
     depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
-    cashRegister: { open: true, openedAt: "08:30" },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
     integrations: { mercadopagoReady: false, whatsappReady: false },
@@ -219,18 +210,22 @@ function seedData(): DomainState {
 
 function seedUsers(db: Database, stamp: string) {
   const users = [
-    { id: "u-admin", role: "admin", identifier: normalizeIdentifier(DEMO_ADMIN.identifier), name: DEMO_ADMIN.name, clientId: null },
-    { id: "u-demo", role: "cliente", identifier: normalizeIdentifier(DEMO_CLIENT.phone), name: DEMO_CLIENT.name, clientId: DEMO_CLIENT.id },
+    { id: "u-admin", shopId: LEGACY_SHOP_ID, role: "admin", identifier: normalizeIdentifier(DEMO_ADMIN.identifier), name: DEMO_ADMIN.name, phone: null },
+    { id: "u-demo", shopId: null, role: "cliente", identifier: normalizeIdentifier(DEMO_CLIENT.email), name: DEMO_CLIENT.name, phone: DEMO_CLIENT.phone },
   ];
   for (const u of users) {
     db.run(
-      `INSERT INTO users (id, shop_id, role, identifier, name, client_id, pin_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET pin_hash = excluded.pin_hash, identifier = excluded.identifier,
-         client_id = excluded.client_id`,
-      [u.id, LEGACY_SHOP_ID, u.role, u.identifier, u.name, u.clientId, hashPin(DEMO_PIN), stamp],
+      `INSERT INTO users (id, shop_id, role, identifier, name, barber_id, phone, password_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET password_hash = excluded.password_hash, identifier = excluded.identifier`,
+      [u.id, u.shopId, u.role, u.identifier, u.name, u.phone, hashPassword(DEMO_PASSWORD), stamp],
     );
   }
+  db.run(
+    `INSERT INTO memberships (user_id, shop_id, client_id, created_at) VALUES ('u-demo', ?, ?, ?)
+     ON CONFLICT(user_id, shop_id) DO UPDATE SET client_id = excluded.client_id`,
+    [LEGACY_SHOP_ID, DEMO_CLIENT.id, stamp],
+  );
 }
 
 /**
@@ -289,16 +284,15 @@ export function slugify(value: string): string {
     .slice(0, 40);
 }
 
-/** Catálogo mínimo con el que arranca una barbería nueva. */
+/**
+ * Con qué arranca una barbería nueva: su dueño en el primer sillón y nada más.
+ *
+ * El catálogo lo carga cada local. Los servicios y los precios son de la barbería, así que
+ * inventarle un "Corte de pelo a $10.000" solo lo obliga a corregir precios que nunca puso.
+ */
 function starterState(shopName: string, ownerName: string, contact: ShopContact): DomainState {
-  const services: DomainState["services"] = [
-    { id: "s-corte", name: "Corte de pelo", description: "", price: 10000, durationMin: 45, category: "corte", active: true, featured: true },
-    { id: "s-barba", name: "Barba", description: "", price: 6000, durationMin: 30, category: "barba", active: true },
-    { id: "s-combo", name: "Corte + Barba", description: "", price: 15000, durationMin: 60, category: "combo", active: true },
-  ];
   return {
     ...emptyState(),
-    services,
     barbers: [
       {
         id: "b-1",
@@ -321,7 +315,6 @@ function starterState(shopName: string, ownerName: string, contact: ShopContact)
       transferAlias: "",
       transferCbu: "",
     },
-    cashRegister: { open: false },
     businessHours: DEFAULT_BUSINESS_HOURS,
     depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
     integrations: { mercadopagoReady: false, whatsappReady: false },
@@ -329,7 +322,6 @@ function starterState(shopName: string, ownerName: string, contact: ShopContact)
     products: [],
     appointments: [],
     blocks: [],
-    cashClosures: [],
   };
 }
 
@@ -345,7 +337,7 @@ export interface NewShopInput extends ShopContact {
   name: string;
   ownerName: string;
   ownerIdentifier: string;
-  ownerPin: string;
+  ownerPassword: string;
 }
 
 /**
@@ -361,6 +353,10 @@ export async function createShop(input: NewShopInput): Promise<{ shop: Shop; use
 
   const base = slugify(name);
   if (!base) throw new DomainError("Elegí un nombre válido para la barbería");
+  // Un barbero (y el dueño) trabaja en una sola barbería.
+  if (staffByIdentifier(db, identifier).length) {
+    throw new DomainError("Ya hay una cuenta de barbería con ese celular o email. Iniciá sesión.", 409);
+  }
 
   // El slug es la URL pública del local: si está tomado, se numera.
   let slug = base;
@@ -384,9 +380,9 @@ export async function createShop(input: NewShopInput): Promise<{ shop: Shop; use
       stamp,
     );
     db.run(
-      `INSERT INTO users (id, shop_id, role, identifier, name, client_id, barber_id, pin_hash, created_at)
-       VALUES (?, ?, 'admin', ?, ?, NULL, NULL, ?, ?)`,
-      [userId, shopId, identifier, ownerName, hashPin(input.ownerPin), stamp],
+      `INSERT INTO users (id, shop_id, role, identifier, name, barber_id, password_hash, created_at)
+       VALUES (?, ?, 'admin', ?, ?, NULL, ?, ?)`,
+      [userId, shopId, identifier, ownerName, hashPassword(input.ownerPassword), stamp],
     );
     bumpVersion(db, shopId);
   });
@@ -394,6 +390,75 @@ export async function createShop(input: NewShopInput): Promise<{ shop: Shop; use
   cache.delete(shopId);
   await persist();
   return { shop: { id: shopId, slug, name }, userId };
+}
+
+// ───────── Cuentas ─────────
+
+/**
+ * Cuentas de staff con ese identificador. Las altas nuevas garantizan que haya a lo sumo una;
+ * una base anterior a la v4 puede traer el mismo dato en dos barberías.
+ */
+export function staffByIdentifier<T = { id: string; password_hash: string }>(db: Database, identifier: string): T[] {
+  return queryAll<T>(db, "SELECT * FROM users WHERE role <> 'cliente' AND identifier = ? ORDER BY created_at", [identifier]);
+}
+
+/** Datos con los que un cliente aparece en la ficha de cada barbería a la que se suma. */
+export interface ClientContact {
+  name: string;
+  phone: string;
+  email: string;
+}
+
+/**
+ * Suma un cliente a una barbería. Si el local ya lo tenía cargado por el celular (por ejemplo,
+ * un turno tomado por teléfono), se vincula esa ficha en vez de duplicarla.
+ * Va dentro de la transacción de quien la llama.
+ */
+export function joinShopTx(db: Database, userId: string, shopId: string, contact: ClientContact, stamp: string): string {
+  const current = queryOne<{ client_id: string }>(db, "SELECT client_id FROM memberships WHERE user_id = ? AND shop_id = ?", [
+    userId,
+    shopId,
+  ]);
+  if (current) return current.client_id;
+
+  const linked = new Set(
+    queryAll<{ client_id: string }>(db, "SELECT client_id FROM memberships WHERE shop_id = ?", [shopId]).map((r) => r.client_id),
+  );
+  const existing = queryAll<{ id: string; data: string }>(db, "SELECT id, data FROM clients WHERE shop_id = ?", [shopId]).find(
+    (row) => !linked.has(row.id) && phoneKey((JSON.parse(row.data) as ClientProfile).phone) === phoneKey(contact.phone),
+  );
+  const clientId = existing?.id ?? uid("c");
+  const profile: ClientProfile = existing
+    ? { ...(JSON.parse(existing.data) as ClientProfile), name: contact.name, email: contact.email || undefined }
+    : {
+        id: clientId,
+        name: contact.name,
+        phone: contact.phone,
+        email: contact.email || undefined,
+        notifications: { reminder24h: true, whatsapp: true },
+        credit: 0,
+        createdAt: stamp,
+      };
+  db.run(
+    `INSERT INTO clients (shop_id, id, data, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(shop_id, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+    [shopId, clientId, JSON.stringify(profile), stamp],
+  );
+  db.run("INSERT INTO memberships (user_id, shop_id, client_id, created_at) VALUES (?, ?, ?, ?)", [userId, shopId, clientId, stamp]);
+  bumpVersion(db, shopId);
+  cache.delete(shopId);
+  return clientId;
+}
+
+/** Contacto de la cuenta de un cliente: con esto se arma su ficha en cada barbería a la que se suma. */
+export function clientContact(db: Database, userId: string): ClientContact | undefined {
+  const user = queryOne<{ name: string; identifier: string; phone: string | null }>(
+    db,
+    "SELECT name, identifier, phone FROM users WHERE id = ? AND role = 'cliente'",
+    [userId],
+  );
+  if (!user) return undefined;
+  return { name: user.name, phone: user.phone ?? "", email: user.identifier.includes("@") ? user.identifier : "" };
 }
 
 // ───────── Estado y comandos ─────────
@@ -412,31 +477,68 @@ export async function executeCommand(actor: Actor, command: Command): Promise<{ 
   if (command.type === "demo.reset" && actor.role !== "admin") throw new DomainError("Acción reservada al staff", 403);
 
   const version = transaction(db, () => {
+    let next: DomainState;
     if (command.type === "demo.reset") {
       // Solo tiene sentido en la barbería de demostración: es la única con datos sembrados.
       if (shopId !== LEGACY_SHOP_ID) throw new DomainError("No disponible para esta barbería", 403);
-      writeState(db, shopId, prev, seedData(), stamp);
+      next = seedData();
+      writeState(db, shopId, prev, next, stamp);
       seedUsers(db, stamp);
     } else {
-      const next = applyCommand(prev, command, actor);
+      next = applyCommand(prev, command, actor);
       writeState(db, shopId, prev, next, stamp);
+      // Borrar la ficha saca al cliente de esta barbería; su cuenta sigue sirviendo en las demás.
       if (command.type === "client.delete") {
-        const users = queryAll<{ id: string }>(db, "SELECT id FROM users WHERE shop_id = ? AND client_id = ?", [
-          shopId,
-          command.id,
-        ]);
-        for (const u of users) {
-          db.run("DELETE FROM sessions WHERE user_id = ?", [u.id]);
-          db.run("DELETE FROM users WHERE id = ?", [u.id]);
-        }
+        db.run("DELETE FROM memberships WHERE shop_id = ? AND client_id = ?", [shopId, command.id]);
       }
+    }
+    // El nombre del local vive en dos lados: en sus datos y en la tabla de barberías, que es la
+    // que ven los clientes al elegir. El slug NO cambia: es el link que el local ya repartió.
+    if (next.businessInfo.name !== prev.businessInfo.name) {
+      db.run("UPDATE shops SET name = ? WHERE id = ?", [next.businessInfo.name, shopId]);
     }
     return bumpVersion(db, shopId);
   });
 
   cache.delete(shopId);
   await persist();
-  return { state: readState(db, shopId), version };
+  const state = readState(db, shopId);
+  mailAboutAppointment(db, shopId, command, prev, state);
+  return { state, version };
+}
+
+/**
+ * Avisos por mail de los turnos: reserva, cancelación y recordatorio.
+ *
+ * Va acá porque es el único lugar por donde pasan todos los comandos, y después de persistir:
+ * el mail nunca puede voltear la operación. El mail sale a la casilla de la cuenta del cliente;
+ * si el turno lo cargó el local a mano y esa persona no tiene cuenta, no hay a dónde mandarlo.
+ */
+function mailAboutAppointment(db: Database, shopId: string, command: Command, prev: DomainState, next: DomainState): void {
+  const kind =
+    command.type === "appointment.book"
+      ? "reservado"
+      : command.type === "appointment.cancel"
+        ? "cancelado"
+        : command.type === "appointment.reminderSent"
+          ? "recordatorio"
+          : undefined;
+  if (!kind) return;
+
+  const before = new Set(prev.appointments.map((a) => a.id));
+  const appointment =
+    command.type === "appointment.book"
+      ? next.appointments.find((a) => !before.has(a.id))
+      : next.appointments.find((a) => a.id === (command as { id: string }).id);
+  if (!appointment?.clientId) return;
+
+  const to = queryOne<{ identifier: string }>(
+    db,
+    `SELECT u.identifier FROM memberships m JOIN users u ON u.id = m.user_id
+      WHERE m.shop_id = ? AND m.client_id = ?`,
+    [shopId, appointment.clientId],
+  )?.identifier;
+  notifyAppointment(kind, appointment, next.businessInfo, to?.includes("@") ? to : undefined);
 }
 
 /** Escritura directa usada por autenticación y credenciales (usuarios, sesiones, secretos). */

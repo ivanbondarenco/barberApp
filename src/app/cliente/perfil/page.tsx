@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronRight, CircleHelp, FileText, History, KeyRound, LogOut, type LucideIcon, Scissors, UserRound } from "lucide-react";
+import { ChevronRight, CircleHelp, FileText, History, KeyRound, LogOut, type LucideIcon, MailCheck, Scissors, Store, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
 import { NAV, Page } from "@/components/motion/Page";
 import { Field } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
@@ -23,7 +24,10 @@ export default function PerfilPage() {
   const client = useCurrentClient();
   const visits = useAppStore((s) => s.appointments.filter((a) => a.clientId === client?.id && a.status === "completado").length);
   const logout = useAppStore((s) => s.logout);
-  const [sheet, setSheet] = useState<"datos" | "pin" | null>(null);
+  const emailVerified = useAppStore((s) => s.session?.emailVerified !== false);
+  const resendVerification = useAppStore((s) => s.resendVerification);
+  const [sending, setSending] = useState(false);
+  const [sheet, setSheet] = useState<"datos" | "password" | null>(null);
 
   if (!client) return null;
 
@@ -56,7 +60,22 @@ export default function PerfilPage() {
           <MenuRow icon={UserRound} label="Mis datos" onClick={() => setSheet("datos")} />
           <MenuRow icon={Scissors} label="Preferencias de corte" detail={client.preferences ?? "Sin definir"} onClick={() => setSheet("datos")} />
           <MenuRow icon={History} label="Historial" href="/cliente/historial" />
-          <MenuRow icon={KeyRound} label="Cambiar PIN" onClick={() => setSheet("pin")} />
+          <MenuRow icon={Store} label="Mis barberías" href="/cliente/barberias" />
+          <MenuRow icon={KeyRound} label="Cambiar contraseña" onClick={() => setSheet("password")} />
+          {!emailVerified && (
+            <MenuRow
+              icon={MailCheck}
+              label={sending ? "Enviando…" : "Confirmar mi email"}
+              detail="Te mandamos un link para confirmarlo"
+              onClick={async () => {
+                if (sending) return;
+                setSending(true);
+                const result = await resendVerification();
+                setSending(false);
+                toast(result.ok ? "Te mandamos el link a tu email" : result.error, result.ok ? "success" : "error");
+              }}
+            />
+          )}
         </div>
       </Section>
 
@@ -93,7 +112,7 @@ export default function PerfilPage() {
       </button>
 
       <ProfileSheet open={sheet === "datos"} client={client} onClose={() => setSheet(null)} />
-      <PinSheet open={sheet === "pin"} onClose={() => setSheet(null)} />
+      <PasswordSheet open={sheet === "password"} onClose={() => setSheet(null)} />
     </Page>
   );
 }
@@ -180,55 +199,10 @@ function ProfileSheet({ open, client, onClose }: { open: boolean; client: Client
   );
 }
 
-function PinSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const changePin = useAppStore((s) => s.changePin);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setCurrent("");
-      setNext("");
-      setError(null);
-    }
-  }, [open]);
-
-  const submit = async () => {
-    if (!/^\d{4}$/.test(current) || !/^\d{4}$/.test(next)) return setError("Los PIN tienen 4 dígitos");
-    setSaving(true);
-    const result = await changePin(current, next);
-    setSaving(false);
-    if (!result.ok) return setError(result.error);
-    toast("PIN actualizado", "success");
-    onClose();
-  };
-
-  const pinProps = { type: "password", inputMode: "numeric" as const, maxLength: 4, className: "field text-center text-lg tracking-[0.4em]" };
-
+function PasswordSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Cambiar PIN"
-      footer={
-        <button type="button" onClick={submit} disabled={saving} className="tap btn-primary">
-          {saving ? "Guardando…" : "Actualizar PIN"}
-        </button>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <Field label="PIN actual" htmlFor="pin-cur">
-          <input id="pin-cur" {...pinProps} value={current} onChange={(e) => setCurrent(e.target.value.replace(/\D/g, ""))} />
-        </Field>
-        <Field label="Nuevo PIN" htmlFor="pin-new" error={error ?? undefined}>
-          <input id="pin-new" {...pinProps} value={next} onChange={(e) => setNext(e.target.value.replace(/\D/g, ""))} />
-        </Field>
-        <Link href="/auth/recuperar" className="text-sm font-semibold text-primary">
-          No recuerdo mi PIN
-        </Link>
-      </div>
+    <Sheet open={open} onClose={onClose} title="Cambiar contraseña">
+      <ChangePasswordForm onDone={onClose} recoverHref="/auth/recuperar?tipo=cliente" />
     </Sheet>
   );
 }

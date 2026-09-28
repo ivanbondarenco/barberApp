@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { adminApi, loginAsClient, pageState, pickFirstSlot, resetData, runCommand } from "./helpers";
+import { adminApi, chooseCalendarDay, chooseDayAhead, loginAsClient, nextSunday, pageState, pickFirstSlot, resetData, runCommand } from "./helpers";
 
 test.beforeAll(resetData);
 test.beforeEach(async ({ page }) => loginAsClient(page));
@@ -7,12 +7,6 @@ test.beforeEach(async ({ page }) => loginAsClient(page));
 async function chooseService(page: Page, name: RegExp) {
   await page.getByRole("radio", { name }).click();
   await expect(page.getByRole("heading", { name: "¿Cuándo venís?" })).toBeVisible();
-}
-
-async function chooseDay(scope: Page | Locator, index: number) {
-  const enabled = scope.getByRole("radiogroup", { name: "Día" }).locator("button:not([disabled])");
-  await enabled.nth(index).click();
-  await expect(enabled.nth(index)).toHaveAttribute("aria-checked", "true");
 }
 
 async function continueToConfirm(page: Page) {
@@ -79,7 +73,7 @@ test("el cliente no puede acreditarse la seña ni llamando a la API", async ({ p
 
 test("reserva con seña en efectivo y después avisa la transferencia", async ({ page }) => {
   await chooseService(page, /Barboterapia/);
-  await chooseDay(page, 3);
+  await chooseDayAhead(page, 4);
   await continueToConfirm(page);
   const cash = page.getByRole("radio", { name: /Efectivo en el local/ });
   await expect(cash, "la seña en efectivo debería estar disponible para un turno lejano").toBeEnabled();
@@ -117,7 +111,7 @@ test("reprograma un turno propio", async ({ page }) => {
 
   await page.getByRole("button", { name: "Reprogramar" }).click();
   const sheet = page.getByRole("dialog", { name: "Reprogramar" });
-  await chooseDay(sheet, 4);
+  await chooseDayAhead(sheet, 5);
   await pickFirstSlot(sheet);
   await sheet.getByRole("button", { name: /^Confirmar/ }).click();
   await expect(sheet).toBeHidden();
@@ -130,7 +124,7 @@ test("reprograma un turno propio", async ({ page }) => {
 test("cancela con anticipación, recibe crédito y lo usa como seña", async ({ page }) => {
   // Reserva lejana para quedar dentro de la ventana de cancelación sin cargo.
   await chooseService(page, /Corte Signature Fade/);
-  await chooseDay(page, 5);
+  await chooseDayAhead(page, 6);
   await continueToConfirm(page);
   await page.getByRole("button", { name: "Pagar seña" }).click();
   await page.getByRole("dialog", { name: "Pagar seña" }).getByRole("button", { name: /Reservar y transferir/ }).click();
@@ -163,6 +157,58 @@ test("cancela con anticipación, recibe crédito y lo usa como seña", async ({ 
   await page.waitForURL(/cliente\/pago\/exito/);
   await expect(page.getByText("Seña abonada con Crédito a favor.")).toBeVisible();
   expect((await pageState(page)).state.clients[0].credit).toBe(credit - 6000);
+});
+
+test("desde el calendario del mes el cliente elige la fecha y después el servicio", async ({ page }) => {
+  await page.goto("/cliente/mis-turnos");
+  await chooseDayAhead(page, 7);
+
+  await page.getByRole("link", { name: "Reservar turno", exact: true }).click();
+  await page.waitForURL(/cliente\/reservar\?fecha=/);
+  const fecha = new URL(page.url()).searchParams.get("fecha")!;
+
+  await chooseService(page, /Corte Clásico Tijera/);
+  // La fecha que venía del calendario queda elegida en el paso del horario.
+  const checked = page.getByRole("radiogroup", { name: "Día" }).getByRole("radio", { checked: true });
+  await expect(checked).toHaveAttribute("aria-label", new RegExp(` ${Number(fecha.slice(8, 10))} `));
+});
+
+test("el cliente toca un domingo y la agenda le dice por qué no puede reservar", async ({ page }) => {
+  await page.goto("/cliente/mis-turnos");
+  const calendar = page.getByRole("radiogroup", { name: "Día" });
+  await expect(calendar.getByRole("radio").first()).toBeVisible();
+  await chooseCalendarDay(page, nextSunday());
+  await expect(page.getByText("Ese día el local está cerrado")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Reservar turno", exact: true })).toBeHidden();
+});
+
+test("la agenda del cliente llega hasta dos semanas: más lejos lo rechaza el servidor", async ({ page }) => {
+  await page.goto("/cliente/mis-turnos");
+  const state = (await pageState(page)).state;
+  const far = new Date();
+  far.setDate(far.getDate() + 30);
+  const date = `${far.getFullYear()}-${String(far.getMonth() + 1).padStart(2, "0")}-${String(far.getDate()).padStart(2, "0")}`;
+
+  const res = await page.request.post("/api/commands", {
+    data: {
+      command: {
+        type: "appointment.book",
+        payload: {
+          id: "a-lejano",
+          clientName: "Tomás Ferreyra",
+          clientPhone: "+54 9 11 5555-0192",
+          barberId: state.barbers[0].id,
+          serviceId: state.services.find((s) => s.active)!.id,
+          date,
+          time: "10:00",
+          depositMethod: "transferencia",
+        },
+      },
+    },
+  });
+  expect(res.status()).toBe(400);
+  expect((await res.json()).error).toMatch(/2 semanas/);
+  expect((await pageState(page)).state.appointments.some((a) => a.id === "a-lejano")).toBe(false);
 });
 
 test("historial filtra turnos y permite repetir", async ({ page }) => {

@@ -31,15 +31,15 @@ beforeEach(() => {
 });
 
 describe("crypto", () => {
-  it("hashea el PIN con sal y lo verifica", async () => {
-    const { hashPin, verifyPin, normalizeIdentifier } = await import("@/server/crypto");
-    const a = hashPin("1234");
-    const b = hashPin("1234");
+  it("hashea la contraseña con sal y la verifica", async () => {
+    const { hashPassword, verifyPassword, normalizeIdentifier } = await import("@/server/crypto");
+    const a = hashPassword("clave-segura");
+    const b = hashPassword("clave-segura");
     expect(a).not.toBe(b);
-    expect(a).not.toContain("1234");
-    expect(verifyPin("1234", a)).toBe(true);
-    expect(verifyPin("4321", a)).toBe(false);
-    expect(verifyPin("1234", "corrupto")).toBe(false);
+    expect(a).not.toContain("clave-segura");
+    expect(verifyPassword("clave-segura", a)).toBe(true);
+    expect(verifyPassword("otra-clave", a)).toBe(false);
+    expect(verifyPassword("clave-segura", "corrupto")).toBe(false);
     expect(normalizeIdentifier(" Admin@DSStudio.com.ar ")).toBe("admin@dsstudio.com.ar");
     expect(normalizeIdentifier("+54 9 11 5555-0192")).toBe("tel:1155550192");
   });
@@ -53,9 +53,18 @@ describe("repositorio SQLite", () => {
     expect(version).toBe(1);
     expect(state.services.length).toBeGreaterThan(0);
     expect(state.clients.find((c) => c.id === "c-demo")?.hasAccount).toBe(true);
-    const users = queryAll<{ identifier: string; pin_hash: string }>(await getDb(), "SELECT identifier, pin_hash FROM users ORDER BY identifier");
-    expect(users.map((u) => u.identifier)).toEqual(["admin@dsstudio.com.ar", "tel:1155550192"]);
-    expect(users.every((u) => u.pin_hash.includes(":"))).toBe(true);
+    const db = await getDb();
+    const users = queryAll<{ identifier: string; password_hash: string; shop_id: string | null }>(
+      db,
+      "SELECT identifier, password_hash, shop_id FROM users ORDER BY identifier",
+    );
+    // El dueño pertenece a la barbería; el cliente tiene una cuenta propia, sumada a ella.
+    expect(users).toMatchObject([
+      { identifier: "admin@dsstudio.com.ar", shop_id: SHOP },
+      { identifier: "tomas.ferreyra@example.com", shop_id: null },
+    ]);
+    expect(users.every((u) => u.password_hash.includes(":"))).toBe(true);
+    expect(queryAll(db, "SELECT shop_id, client_id FROM memberships")).toEqual([{ shop_id: SHOP, client_id: "c-demo" }]);
     expect(fs.existsSync(dbFile)).toBe(true);
   });
 
@@ -93,17 +102,17 @@ describe("repositorio SQLite", () => {
     expect(queryAll(await getDb(), "SELECT id FROM appointments WHERE id = ?", ["a-martin"])).toHaveLength(0);
   });
 
-  it("eliminar un cliente borra también su cuenta y sesiones", async () => {
+  it("eliminar un cliente lo saca de la barbería pero su cuenta sigue sirviendo en las demás", async () => {
     freezeTime(new Date(2026, 8, 14, 21, 0)); // después de su turno de hoy
     const { executeCommand, mutate, getDb, queryAll } = await loadServer();
     await mutate((db) => {
-      db.run("INSERT INTO users (id, shop_id, role, identifier, name, client_id, pin_hash, created_at) VALUES ('u-lucas','s-default','cliente','tel:1161204471','Lucas','c-lucas','x:y','now')");
-      db.run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('tok','u-lucas','2099-01-01')");
+      db.run("INSERT INTO users (id, shop_id, role, identifier, name, password_hash, created_at) VALUES ('u-lucas',NULL,'cliente','lucas@test.com','Lucas','x:y','now')");
+      db.run("INSERT INTO memberships (user_id, shop_id, client_id, created_at) VALUES ('u-lucas','s-default','c-lucas','now')");
     });
     await executeCommand({ role: "admin", shopId: SHOP }, { type: "client.delete", id: "c-lucas" });
     const db = await getDb();
-    expect(queryAll(db, "SELECT id FROM users WHERE id = 'u-lucas'")).toHaveLength(0);
-    expect(queryAll(db, "SELECT token_hash FROM sessions WHERE user_id = 'u-lucas'")).toHaveLength(0);
+    expect(queryAll(db, "SELECT user_id FROM memberships WHERE user_id = 'u-lucas'")).toHaveLength(0);
+    expect(queryAll(db, "SELECT id FROM users WHERE id = 'u-lucas'")).toHaveLength(1);
   });
 
   it("demo.reset regenera los datos", async () => {
@@ -122,7 +131,6 @@ describe("visibilidad por rol", () => {
     const view = stateForActor(state, null);
     expect(view.clients).toEqual([]);
     expect(view.appointments).toEqual([]);
-    expect(view.cashClosures).toEqual([]);
     expect(view.services.every((s) => s.active)).toBe(true);
   });
 
@@ -168,16 +176,14 @@ describe("visibilidad por rol", () => {
       expect(a.clientPhone).toBe("");
       expect(a.servicePrice).toBe(0);
     }
-    // La plata del local es del dueño.
-    expect(view.cashClosures).toEqual([]);
   });
 
   it("el usuario de acceso del staff no sale en la vista pública", async () => {
     const { loadState, mutate } = await loadServer();
     await mutate((db) => {
       db.run(
-        `INSERT INTO users (id, shop_id, role, identifier, name, client_id, barber_id, pin_hash, created_at)
-         VALUES ('u-b-nico', 's-default', 'barbero', 'tel:1122334455', 'Nico', NULL, 'b-nico', 'x:y', '2026-01-01')`,
+        `INSERT INTO users (id, shop_id, role, identifier, name, barber_id, password_hash, created_at)
+         VALUES ('u-b-nico', 's-default', 'barbero', 'tel:1122334455', 'Nico', 'b-nico', 'x:y', '2026-01-01')`,
       );
     }, { touchesState: SHOP });
 
@@ -214,7 +220,7 @@ describe("regresiones de seguridad", () => {
     ).rejects.toThrow(/reservada al staff/);
   });
 
-  it("un barbero no puede operar el turno de otro sillón ni tocar la caja", async () => {
+  it("un barbero no puede operar el turno de otro sillón ni la configuración", async () => {
     const { executeCommand, loadState } = await loadServer();
     const { state } = await loadState(SHOP);
     const otherChair = state.appointments.find((a) => a.barberId !== "b-nico" && a.status === "confirmado");
@@ -223,7 +229,7 @@ describe("regresiones de seguridad", () => {
     await expect(
       executeCommand({ role: "barbero", shopId: SHOP, barberId: "b-nico" }, { type: "appointment.charge", id: otherChair!.id, method: "efectivo" }),
     ).rejects.toThrow(/otro barbero/);
-    await expect(executeCommand({ role: "barbero", shopId: SHOP, barberId: "b-nico" }, { type: "cash.close", closure: { id: "cc-x", date: "2026-09-14", expectedCash: 0, countedCash: 0, digital: 0, total: 0 } })).rejects.toThrow(/reservada al dueño/);
+    await expect(executeCommand({ role: "barbero", shopId: SHOP, barberId: "b-nico" }, { type: "settings.deposit", allowCash: false })).rejects.toThrow(/reservada al dueño/);
   });
 
   it("el actor sistema solo puede acreditar señas", async () => {
@@ -242,13 +248,13 @@ describe("aislamiento entre barberías", () => {
       name,
       ownerName: "Dueño",
       ownerIdentifier: identifier,
-      ownerPin: "9876",
+      ownerPassword: "clave-segura",
       address: "Calle Falsa 123",
       whatsapp: "+54 9 11 9999 0000",
     });
   }
 
-  it("una barbería nueva arranca con su propio catálogo y sin datos de la demo", async () => {
+  it("una barbería nueva arranca sin catálogo y sin datos de la demo", async () => {
     const { shop } = await newShop("Barbería Norte", "norte@test.com");
     const { loadState } = await loadServer();
 
@@ -258,28 +264,45 @@ describe("aislamiento entre barberías", () => {
     expect(nueva.businessInfo.name).toBe("Barbería Norte");
     expect(nueva.appointments).toEqual([]);
     expect(nueva.clients).toEqual([]);
-    expect(nueva.cashClosures).toEqual([]);
-    expect(nueva.services.length).toBeGreaterThan(0);
+    // Los servicios y sus precios son de cada local: no se inventa ninguno.
+    expect(nueva.services).toEqual([]);
+    expect(nueva.products).toEqual([]);
+    // El dueño sí queda en su sillón, para poder recibir turnos.
+    expect(nueva.barbers).toHaveLength(1);
     // Y nada de la demo se filtró.
+    expect(demo.services.length).toBeGreaterThan(0);
     expect(demo.appointments.length).toBeGreaterThan(0);
-    expect(nueva.services.map((s) => s.id)).not.toEqual(expect.arrayContaining(demo.services.map((s) => s.id)));
   });
 
-  it("los ids sembrados pueden repetirse entre barberías sin pisarse", async () => {
+  it("cada barbería carga su propio servicio, con su precio, aunque repitan el id", async () => {
     const a = await newShop("Barbería Uno", "uno@test.com");
     const b = await newShop("Barbería Dos", "dos@test.com");
     const { executeCommand, loadState } = await loadServer();
 
-    // Las dos tienen el servicio "s-corte": cambiarlo en una no toca a la otra.
-    const service = (await loadState(a.shop.id)).state.services.find((s) => s.id === "s-corte")!;
-    expect(service).toBeDefined();
+    const corte = {
+      id: "s-corte",
+      name: "Corte",
+      description: "",
+      durationMin: 45,
+      category: "corte" as const,
+      active: true,
+      price: 12000,
+    };
+    await executeCommand({ role: "admin", shopId: a.shop.id }, { type: "service.upsert", service: corte });
     await executeCommand(
-      { role: "admin", shopId: a.shop.id },
-      { type: "service.upsert", service: { ...service, price: 33000 } },
+      { role: "admin", shopId: b.shop.id },
+      { type: "service.upsert", service: { ...corte, price: 20000 } },
     );
 
+    // Mismo id en las dos, precio propio en cada una: tocar una no toca a la otra.
+    await executeCommand({ role: "admin", shopId: a.shop.id }, { type: "service.upsert", service: { ...corte, price: 33000 } });
     expect((await loadState(a.shop.id)).state.services.find((s) => s.id === "s-corte")?.price).toBe(33000);
-    expect((await loadState(b.shop.id)).state.services.find((s) => s.id === "s-corte")?.price).toBe(service.price);
+    expect((await loadState(b.shop.id)).state.services.find((s) => s.id === "s-corte")?.price).toBe(20000);
+
+    // Y la baja también es de una sola.
+    await executeCommand({ role: "admin", shopId: a.shop.id }, { type: "service.delete", id: "s-corte" });
+    expect((await loadState(a.shop.id)).state.services).toEqual([]);
+    expect((await loadState(b.shop.id)).state.services).toHaveLength(1);
   });
 
   it("cada barbería lleva su propia versión de estado", async () => {
@@ -287,23 +310,21 @@ describe("aislamiento entre barberías", () => {
     const { executeCommand, loadState } = await loadServer();
 
     const demoBefore = (await loadState(SHOP)).version;
-    await executeCommand({ role: "admin", shopId: shop.id }, { type: "cash.open" });
+    await executeCommand({ role: "admin", shopId: shop.id }, { type: "settings.info", patch: { instagram: "@nueva" } });
 
     expect((await loadState(SHOP)).version).toBe(demoBefore);
     expect((await loadState(shop.id)).version).toBeGreaterThan(0);
   });
 
-  it("el mismo celular puede tener cuenta en dos barberías distintas", async () => {
+  it("un barbero trabaja en una sola barbería: el mismo dato no puede abrir otra", async () => {
     const a = await newShop("Barbería A", "+54 9 11 7777 0001");
-    const b = await newShop("Barbería B", "+54 9 11 7777 0001");
-    expect(a.shop.id).not.toBe(b.shop.id);
-    expect(a.userId).not.toBe(b.userId);
+    await expect(newShop("Barbería B", "+54 9 11 7777 0001")).rejects.toThrow(/Ya hay una cuenta de barbería/);
 
     const { getDb, queryAll } = await loadServer();
     const rows = queryAll<{ shop_id: string }>(await getDb(), "SELECT shop_id FROM users WHERE identifier = ?", [
       "tel:1177770001",
     ]);
-    expect(rows.map((r) => r.shop_id).sort()).toEqual([a.shop.id, b.shop.id].sort());
+    expect(rows.map((r) => r.shop_id)).toEqual([a.shop.id]);
   });
 
   it("el slug se numera cuando el nombre ya está tomado", async () => {
@@ -359,7 +380,7 @@ describe("una barbería nueva", () => {
       name,
       ownerName: "Marcos Duarte",
       ownerIdentifier: identifier,
-      ownerPin: "9876",
+      ownerPassword: "clave-segura",
       address: "San Martín 1234",
       whatsapp: "+54 9 11 6000 7000",
     });
@@ -454,5 +475,79 @@ describe("arranque en producción", () => {
       vi.resetModules();
       fs.rmSync(emptyDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("una cuenta de cliente en varias barberías", () => {
+  it("se suma a otra barbería con una ficha propia en cada una", async () => {
+    const { createShop, mutate, joinShopTx, clientContact, loadState, getDb, queryAll } = await loadServer();
+    const { shop } = await createShop({
+      name: "Barbería Segunda",
+      ownerName: "Dueña",
+      ownerIdentifier: "segunda@test.com",
+      ownerPassword: "clave-segura",
+      address: "Calle 2",
+      whatsapp: "+54 9 11 2222 0000",
+    });
+
+    // La cuenta demo (u-demo) ya está en la barbería de la demo; se suma a la nueva.
+    const contact = clientContact(await getDb(), "u-demo");
+    expect(contact).toMatchObject({ email: "tomas.ferreyra@example.com", phone: "+54 9 11 5555-0192" });
+    const clientId = await mutate((db) => joinShopTx(db, "u-demo", shop.id, contact!, "2026-09-20T10:00:00.000Z"));
+
+    const shops = queryAll<{ shop_id: string }>(await getDb(), "SELECT shop_id FROM memberships WHERE user_id = 'u-demo' ORDER BY created_at");
+    expect(shops.map((s) => s.shop_id)).toEqual([SHOP, shop.id]);
+    // La nueva barbería lo ve como cliente con cuenta; la demo lo sigue teniendo con su ficha.
+    const nueva = (await loadState(shop.id)).state.clients;
+    expect(nueva).toEqual([expect.objectContaining({ id: clientId, name: "Tomás Ferreyra", hasAccount: true })]);
+    expect((await loadState(SHOP)).state.clients.find((c) => c.id === "c-demo")?.hasAccount).toBe(true);
+
+    // Sumarse dos veces no duplica nada.
+    const again = await mutate((db) => joinShopTx(db, "u-demo", shop.id, contact!, "2026-09-20T11:00:00.000Z"));
+    expect(again).toBe(clientId);
+    expect((await loadState(shop.id)).state.clients).toHaveLength(1);
+  });
+
+  it("si el local ya lo tenía cargado por el celular, vincula esa ficha en vez de duplicarla", async () => {
+    const { mutate, joinShopTx, loadState } = await loadServer();
+    await mutate((db) => {
+      db.run("INSERT INTO users (id, shop_id, role, identifier, name, phone, password_hash, created_at) VALUES ('u-mateo',NULL,'cliente','mateo@test.com','Mateo Rossi','+54 9 11 4321-8890','x:y','now')");
+    });
+    // c-mateo es un cliente cargado a mano por el local de la demo, con el mismo celular.
+    const clientId = await mutate((db) =>
+      joinShopTx(db, "u-mateo", SHOP, { name: "Mateo Rossi", phone: "+54 9 11 4321 8890", email: "mateo@test.com" }, "now"),
+    );
+    expect(clientId).toBe("c-mateo");
+    const mateo = (await loadState(SHOP)).state.clients.find((c) => c.id === "c-mateo");
+    expect(mateo).toMatchObject({ hasAccount: true, email: "mateo@test.com" });
+  });
+});
+
+describe("cambiar el nombre de una barbería", () => {
+  it("lo actualiza también en el listado público, sin tocar el link", async () => {
+    const { createShop, executeCommand, loadState, listShops } = await loadServer();
+    const { shop } = await createShop({
+      name: "Barbería Con Nombre Viejo",
+      ownerName: "Dueño",
+      ownerIdentifier: "renombrar@test.com",
+      ownerPassword: "clave-segura",
+      address: "Calle 3",
+      whatsapp: "+54 9 11 3333 0000",
+    });
+
+    await executeCommand({ role: "admin", shopId: shop.id }, { type: "settings.info", patch: { name: "  Barbería Nueva  " } });
+
+    expect((await loadState(shop.id)).state.businessInfo.name).toBe("Barbería Nueva");
+    const listed = (await listShops()).find((s) => s.id === shop.id);
+    // El nombre cambia en las dos partes, pero el slug es el link que ya repartió: no se toca.
+    expect(listed).toMatchObject({ name: "Barbería Nueva", slug: "barberia-con-nombre-viejo" });
+  });
+
+  it("no lo deja vacío", async () => {
+    const { executeCommand, loadState } = await loadServer();
+    await expect(
+      executeCommand({ role: "admin", shopId: SHOP }, { type: "settings.info", patch: { name: "  " } }),
+    ).rejects.toThrow(/nombre de la barbería/);
+    expect((await loadState(SHOP)).state.businessInfo.name).toBe("D.S Studio Barbería");
   });
 });

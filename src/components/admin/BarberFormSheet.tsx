@@ -10,6 +10,7 @@ import { Field } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { initials, uid } from "@/lib/format";
+import { PASSWORD_MIN } from "@/lib/password";
 import type { Barber } from "@/lib/types";
 import { deleteBarber, saveBarber, saveStaffAccount } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
@@ -24,7 +25,7 @@ const schema = z.object({
   /** Usuario con el que entra a la app. Vacío = sin acceso. */
   accountIdentifier: z.string().trim(),
   /** Obligatorio solo al darle acceso por primera vez. */
-  accountPin: z.string().trim(),
+  accountPassword: z.string().trim(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -50,7 +51,7 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
       phone: barber?.phone ?? "",
       active: barber?.active ?? true,
       accountIdentifier: barber?.accountIdentifier ?? "",
-      accountPin: "",
+      accountPassword: "",
     });
   }, [open, barber]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -74,17 +75,17 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
 
     // El acceso vive aparte del sillón: se guarda solo si cambió algo.
     const identifierChanged = v.accountIdentifier !== (barber?.accountIdentifier ?? "");
-    if (identifierChanged || v.accountPin) {
-      if (v.accountIdentifier && !barber?.hasAccount && v.accountPin.length !== 4) {
-        return toast("Elegí un PIN inicial de 4 dígitos para su acceso", "error");
+    if (identifierChanged || v.accountPassword) {
+      if (v.accountIdentifier && !barber?.hasAccount && !v.accountPassword) {
+        return toast("Elegí una contraseña inicial para su acceso", "error");
       }
-      if (v.accountPin && v.accountPin.length !== 4) {
-        return toast("El PIN tiene 4 dígitos", "error");
+      if (v.accountPassword && v.accountPassword.length < PASSWORD_MIN) {
+        return toast(`La contraseña tiene al menos ${PASSWORD_MIN} caracteres`, "error");
       }
       const account = await saveStaffAccount({
         barberId: id,
         identifier: v.accountIdentifier,
-        pin: v.accountPin || undefined,
+        password: v.accountPassword || undefined,
       });
       if (!account.ok) return;
     }
@@ -131,7 +132,7 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
               <KeyRound size={15} className="text-primary" aria-hidden /> Acceso a la app
             </p>
             <p className="-mt-1 text-xs text-secondary">
-              Con cuenta propia ve y cobra solo su agenda. La caja, el catálogo y la configuración quedan para vos.
+              Con cuenta propia ve y cobra solo su agenda. El catálogo, el equipo y la configuración quedan para vos.
             </p>
             <Field label="Email o celular" htmlFor="bf-account" error={errors.accountIdentifier?.message}>
               <input
@@ -142,19 +143,22 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
                 {...register("accountIdentifier")}
               />
             </Field>
-            <Field label={barber?.hasAccount ? "PIN nuevo (opcional)" : "PIN inicial"} htmlFor="bf-pin" error={errors.accountPin?.message}>
+            <Field
+              label={barber?.hasAccount ? "Contraseña nueva (opcional)" : "Contraseña inicial"}
+              htmlFor="bf-password"
+              hint={`Al menos ${PASSWORD_MIN} caracteres`}
+              error={errors.accountPassword?.message}
+            >
               <input
-                id="bf-pin"
-                inputMode="numeric"
-                maxLength={4}
-                autoComplete="off"
-                className="field bg-surface-lowest tracking-[0.4em]"
-                placeholder="••••"
-                {...register("accountPin")}
+                id="bf-password"
+                type="password"
+                autoComplete="new-password"
+                className="field bg-surface-lowest"
+                {...register("accountPassword")}
               />
             </Field>
             {barber?.hasAccount && (
-              <p className="text-xs text-secondary">Al cambiarle el PIN se cierran sus sesiones abiertas.</p>
+              <p className="text-xs text-secondary">Al cambiarle la contraseña se cierran sus sesiones abiertas.</p>
             )}
           </fieldset>
 

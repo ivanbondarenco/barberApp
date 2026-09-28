@@ -23,6 +23,8 @@ export function needsReminder(appointment: Appointment, clients: ClientProfile[]
   if (appointment.reminderSentAt) return false;
   // Una reserva que todavía retiene el horario sin pagar no se recuerda: puede liberarse sola.
   if (appointment.holdUntil) return false;
+  // Turno cargado sin celular (cliente sin app): no hay a dónde escribirle.
+  if (!appointment.clientPhone.trim()) return false;
 
   const left = hoursUntil(appointment.date, appointment.time, now);
   if (left <= 0 || left > REMINDER_LEAD_HOURS) return false;

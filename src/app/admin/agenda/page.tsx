@@ -2,9 +2,8 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { Ban, CalendarX2, ChevronLeft, ChevronRight, Lock } from "lucide-react";
+import { Ban, CalendarPlus, CalendarX2, Lock } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AppointmentFormSheet } from "@/components/appointments/AppointmentFormSheet";
 import { BlockSheet } from "@/components/appointments/BlockSheet";
@@ -13,25 +12,24 @@ import { NAV, Page } from "@/components/motion/Page";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Fab } from "@/components/ui/Fab";
 import { EmptyState } from "@/components/ui/States";
+import { MonthCalendar } from "@/components/ui/MonthCalendar";
 import { cn } from "@/lib/cn";
-import { dateTime, dayNumber, dayShort, longDate, timeToMinutes, todayISO, workWeek } from "@/lib/dates";
+import { dateTime, longDate, timeToMinutes, todayISO } from "@/lib/dates";
 import { money } from "@/lib/format";
 import { ease, listItem } from "@/lib/motion";
 import { appointmentTotals } from "@/lib/pricing";
-import { firstOpenDay, shiftOf } from "@/lib/schedule";
+import { firstOpenDay, openingHours, shiftOf } from "@/lib/schedule";
 import type { Appointment, TimeBlock } from "@/lib/types";
-import { deleteBlock, openCash } from "@/store/actions";
+import { deleteBlock } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 
 type Item = { kind: "appointment"; data: Appointment } | { kind: "block"; data: TimeBlock };
 const timeOf = (i: Item) => (i.kind === "appointment" ? i.data.time : i.data.start);
 
 export default function AgendaPage() {
-  const router = useRouter();
   const barbers = useAppStore((s) => s.barbers);
   const appointments = useAppStore((s) => s.appointments);
   const blocks = useAppStore((s) => s.blocks);
-  const cashRegister = useAppStore((s) => s.cashRegister);
   const session = useAppStore((s) => s.session);
   const isOwner = session?.role === "admin";
 
@@ -40,20 +38,26 @@ export default function AgendaPage() {
   // Si hoy el local está cerrado (domingo, por ejemplo), la agenda arranca en el próximo día
   // abierto en vez de mostrar un día vacío y la semana que ya pasó.
   const anchor = useMemo(() => firstOpenDay(today, hours), [today, hours]);
-  const [weekOffset, setWeekOffset] = useState(0);
   const [date, setDate] = useState(anchor);
+  const [month, setMonth] = useState(anchor);
   const [direction, setDirection] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockToDelete, setBlockToDelete] = useState<TimeBlock | null>(null);
-  const [cashConfirm, setCashConfirm] = useState(false);
-
-  const week = useMemo(() => workWeek(anchor, weekOffset), [anchor, weekOffset]);
 
   const mine = useMemo(
     () => (isOwner ? appointments : appointments.filter((a) => a.barberId === session?.barberId)),
     [appointments, isOwner, session?.barberId],
   );
+  /** Turnos por día del mes: es el punto que marca cada casilla del calendario. */
+  const countByDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of mine) {
+      if (a.status === "cancelado") continue;
+      map.set(a.date, (map.get(a.date) ?? 0) + 1);
+    }
+    return map;
+  }, [mine]);
   const dayAppointments = useMemo(
     () => mine.filter((a) => a.date === date && a.status !== "cancelado"),
     [mine, date],
@@ -67,11 +71,13 @@ export default function AgendaPage() {
     [dayAppointments, blocks, date],
   );
   const pending = dayAppointments.filter((a) => a.status === "confirmado").reduce((n, a) => n + appointmentTotals(a).dueAtChair, 0);
+  const opening = openingHours(date, hours);
   const nowMs = Date.now();
 
   const selectDay = (d: string) => {
     setDirection(d > date ? 1 : -1);
     setDate(d);
+    setMonth(d);
   };
 
   const groups: { label: string; items: Item[] }[] = [
@@ -81,62 +87,56 @@ export default function AgendaPage() {
 
   return (
     <Page className="pb-28">
-      {/* Semana */}
+      {/* Mes completo: de un vistazo se ve qué días tienen turnos. */}
       <div className="px-5 pt-1">
-        <div className="flex items-center justify-between">
-          <p className="text-[15px] font-semibold capitalize">{longDate(date)}</p>
-          <div className="flex items-center">
-            <button type="button" aria-label="Semana anterior" onClick={() => setWeekOffset((w) => w - 1)} className="icon-btn h-10 w-10 text-secondary">
-              <ChevronLeft size={19} />
-            </button>
-            <button type="button" aria-label="Semana siguiente" onClick={() => setWeekOffset((w) => w + 1)} className="icon-btn h-10 w-10 text-secondary">
-              <ChevronRight size={19} />
-            </button>
-          </div>
-        </div>
-        <div className="mt-2 grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Día">
-          {week.map((d) => {
-            const active = d === date;
-            const count = mine.filter((a) => a.date === d && a.status !== "cancelado").length;
-            return (
-              <button
-                key={d}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => selectDay(d)}
-                className={cn("tap relative flex flex-col items-center rounded-2xl py-2", active ? "text-on-primary" : "text-ink")}
-              >
-                {active && <m.span layoutId="agenda-day" transition={{ type: "spring", damping: 30, stiffness: 400 }} className="absolute inset-0 rounded-2xl bg-primary shadow-cta" aria-hidden />}
-                <span className={cn("relative text-[11px] font-medium", active ? "text-on-primary/80" : "text-secondary")}>{d === today ? "Hoy" : dayShort(d)}</span>
-                <span className="relative text-lg font-bold tabular-nums">{dayNumber(d)}</span>
-                <span className={cn("relative mt-0.5 h-1 w-1 rounded-full", count ? (active ? "bg-on-primary" : "bg-primary") : "bg-transparent")} />
-              </button>
-            );
-          })}
-        </div>
+        <MonthCalendar
+          month={month}
+          onMonthChange={setMonth}
+          selected={date}
+          onSelect={selectDay}
+          markOf={(iso) => ({ count: countByDay.get(iso) ?? 0 })}
+        />
       </div>
 
-      {/* Resumen del día */}
-      <div className="mt-4 flex items-center gap-2 px-5">
-        <p className="min-w-0 flex-1 truncate text-sm text-secondary">
-          <strong className="font-semibold text-ink">{dayAppointments.length} turnos</strong>
-          {pending > 0 && <> · {money(pending)} a cobrar</>}
-        </p>
-        <button type="button" onClick={() => setBlockOpen(true)} aria-label="Bloquear horario" className="icon-btn h-10 w-10 bg-surface-lowest text-secondary shadow-xs">
-          <Ban size={15} />
-        </button>
-        {isOwner && (
-          <button
-            type="button"
-            onClick={() => (cashRegister.open ? router.push("/admin/finanzas/cierre", { transitionTypes: [...NAV.forward] }) : setCashConfirm(true))}
-            className={cn("chip min-h-10 px-3", cashRegister.open ? "bg-mint text-mint-ink" : "bg-error-container text-error")}
-          >
-            <span className={cn("h-1.5 w-1.5 rounded-full", cashRegister.open ? "bg-mint-ink" : "bg-error")} />
-            {cashRegister.open ? "Caja abierta" : "Caja cerrada"}
-          </button>
-        )}
-      </div>
+      {/* Qué se puede hacer sobre el día elegido */}
+      <section className="mt-4 px-5">
+        <div className="rounded-2xl bg-surface-lowest p-4 shadow-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-[15px] font-semibold capitalize">{longDate(date)}</p>
+              <p className="text-[13px] text-secondary">
+                {dayAppointments.length} turnos
+                {pending > 0 && <> · {money(pending)} a cobrar</>}
+                {opening ? <> · abre {opening.open} a {opening.close}</> : <> · cerrado</>}
+              </p>
+            </div>
+            {date !== anchor && (
+              <button type="button" onClick={() => selectDay(anchor)} className="chip shrink-0 bg-surface-low px-2.5 py-1.5 text-secondary">
+                Ir a hoy
+              </button>
+            )}
+          </div>
+
+          {date < today ? (
+            <p className="mt-3 rounded-xl bg-surface-low px-3 py-2.5 text-[13px] text-secondary">
+              Ese día ya pasó: queda para consultar lo que se hizo.
+            </p>
+          ) : opening ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setFormOpen(true)} className="tap btn-primary">
+                <CalendarPlus size={17} aria-hidden /> Cargar turno
+              </button>
+              <button type="button" onClick={() => setBlockOpen(true)} className="tap btn-secondary">
+                <Ban size={16} aria-hidden /> Bloquear horario
+              </button>
+            </div>
+          ) : (
+            <p className="mt-3 rounded-xl bg-surface-low px-3 py-2.5 text-[13px] text-secondary">
+              Ese día el local está cerrado. Podés abrirlo en Configuración › Horarios.
+            </p>
+          )}
+        </div>
+      </section>
 
       {/* Lista */}
       <AnimatePresence mode="wait" custom={direction} initial={false}>
@@ -195,7 +195,7 @@ export default function AgendaPage() {
         initialDate={date}
         onCreated={(id) => {
           const created = useAppStore.getState().appointments.find((a) => a.id === id);
-          if (created) setDate(created.date);
+          if (created) selectDay(created.date);
         }}
       />
       <BlockSheet open={blockOpen} onClose={() => setBlockOpen(false)} date={date} />
@@ -208,14 +208,6 @@ export default function AgendaPage() {
         onConfirm={async () => {
           if (blockToDelete) await deleteBlock(blockToDelete);
         }}
-      />
-      <ConfirmDialog
-        open={cashConfirm}
-        onClose={() => setCashConfirm(false)}
-        title="¿Abrir la caja?"
-        description="Habilita registrar señas y cobros del día."
-        confirmLabel="Abrir caja"
-        onConfirm={() => void openCash()}
       />
     </Page>
   );

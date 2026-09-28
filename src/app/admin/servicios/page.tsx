@@ -60,11 +60,22 @@ export default function CatalogoPage() {
         >
           {tab === "servicios" && (
             <>
-              <p className="px-1 text-sm text-secondary">
-                Ticket promedio <strong className="font-semibold text-ink">{money(ticket)}</strong> · {services.filter((s) => s.active).length} visibles
-              </p>
+              {services.length > 0 && (
+                <p className="px-1 text-sm text-secondary">
+                  Ticket promedio <strong className="font-semibold text-ink">{money(ticket)}</strong> · {services.filter((s) => s.active).length} visibles
+                </p>
+              )}
               {services.length === 0 ? (
-                <EmptyState icon={Scissors} title="Sin servicios" text="Creá el primero con el botón +." />
+                <EmptyState
+                  icon={Scissors}
+                  title="Todavía no cargaste tus servicios"
+                  text="Cargá los que hacés en tu local, con tu precio y tu duración. Son tuyos: no los comparte ninguna otra barbería."
+                  action={
+                    <button type="button" onClick={() => setServiceSheet({ open: true })} className="tap btn-primary px-6">
+                      Crear mi primer servicio
+                    </button>
+                  }
+                />
               ) : (
                 <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
                   <AnimatePresence initial={false}>
@@ -129,6 +140,11 @@ export default function CatalogoPage() {
             <>
               <DepositRulesPanel />
               <Section title="Seña por servicio">
+                {services.length === 0 && (
+                  <p className="rounded-2xl bg-surface-lowest px-4 py-5 text-center text-sm text-secondary shadow-xs">
+                    Cargá tus servicios y acá vas a ver cuánta seña pide cada uno.
+                  </p>
+                )}
                 <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
                   {services.map((s) => (
                     <li key={s.id} className="row">

@@ -53,8 +53,9 @@ test("ficha del cliente agenda un turno con sus datos precargados", async ({ pag
   await page.goto("/admin/clientes/c-mateo");
   await page.getByRole("button", { name: "Turno", exact: true }).click();
   const form = page.getByRole("dialog", { name: "Nuevo turno" });
-  await expect(form.getByLabel("Cliente")).toHaveValue("Mateo Rossi");
-  await expect(form.getByText("Cliente existente: Mateo Rossi")).toBeVisible();
+  // Llega con la ficha ya elegida: el turno se cuelga de ese cliente, no de un nombre escrito.
+  await expect(form.getByText("Mateo Rossi")).toBeVisible();
+  await expect(form.getByRole("button", { name: "Cambiar" })).toBeVisible();
 });
 
 test("equipo: alta, desactivar y baja de un barbero", async ({ page }) => {
@@ -100,6 +101,26 @@ test("configuración: datos del negocio con validación", async ({ page }) => {
   await expect(page.getByLabel("Alias")).toHaveValue("DS.STUDIO.PAGOS");
 });
 
+test("configuración: el dueño le cambia el nombre a su barbería", async ({ page }) => {
+  await page.goto("/admin/configuracion");
+  await page.getByLabel("Nombre de la barbería").fill("  ");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(page.getByText("Ingresá el nombre de la barbería")).toBeVisible();
+
+  await page.getByLabel("Nombre de la barbería").fill("Barbería Renombrada");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  // Cambia para sus clientes, y el link del local sigue siendo el mismo.
+  await expect.poll(async () => (await pageState(page)).shop?.name).toBe("Barbería Renombrada");
+  expect((await pageState(page)).shop?.slug).toBe("ds-studio");
+  await page.reload();
+  await expect(page.getByLabel("Nombre de la barbería")).toHaveValue("Barbería Renombrada");
+
+  // Se deja como estaba para el resto de los tests.
+  await page.getByLabel("Nombre de la barbería").fill("D.S Studio Barbería");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect.poll(async () => (await pageState(page)).shop?.name).toBe("D.S Studio Barbería");
+});
+
 test("configuración: cerrar un día lo quita de la reserva del cliente", async ({ page, browser }) => {
   await page.goto("/admin/configuracion");
   await page.getByRole("tab", { name: "Horarios" }).click();
@@ -111,8 +132,13 @@ test("configuración: cerrar un día lo quita de la reserva del cliente", async 
   const client = await newDevice(browser);
   await loginAsClient(client.page);
   await client.page.getByRole("radio", { name: /Corte Clásico Tijera/ }).click();
-  const dayLabels = await client.page.getByRole("radiogroup", { name: "Día" }).getByRole("radio").allTextContents();
-  expect(dayLabels.some((d) => d.includes("Sáb"))).toBe(false);
+  const calendar = client.page.getByRole("radiogroup", { name: "Día" });
+  await expect(calendar.getByRole("radio").first()).toBeVisible();
+  const open = await calendar
+    .locator("button:not([disabled])")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? ""));
+  expect(open.length).toBeGreaterThan(0);
+  expect(open.some((label) => label.startsWith("Sábado"))).toBe(false);
   await client.context.close();
 
   await saturday.click();

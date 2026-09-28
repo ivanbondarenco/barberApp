@@ -31,7 +31,7 @@ function anonymous(a: Appointment): Appointment {
 /**
  * Datos que puede ver cada rol.
  * - `admin`: todo.
- * - `barbero`: su agenda completa; los turnos de otros sillones, anonimizados. Sin caja ni cierres.
+ * - `barbero`: su agenda completa; los turnos de otros sillones, anonimizados.
  * - `cliente`: lo propio y la disponibilidad anónima.
  * - sin sesión: catálogo público.
  */
@@ -44,8 +44,6 @@ export function stateForActor(state: DomainState, actor: Actor | null): DomainSt
     return {
       ...state,
       appointments: state.appointments.map((a) => (a.barberId === actor.barberId ? a : anonymous(a))),
-      // La plata del local es del dueño: el barbero no ve cierres ni historial de caja.
-      cashClosures: [],
     };
   }
 
@@ -60,8 +58,6 @@ export function stateForActor(state: DomainState, actor: Actor | null): DomainSt
     products: state.products.filter((p) => p.active),
     appointments: [],
     blocks: state.blocks.filter((b) => b.date >= today).map((b) => ({ ...b, reason: "" })),
-    cashClosures: [],
-    cashRegister: { open: false },
   };
   if (!actor || actor.role === "sistema") return publicPart;
 

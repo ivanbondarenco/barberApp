@@ -89,6 +89,16 @@ describe("reserva del cliente", () => {
     expectError(() => run({ type: "appointment.book", payload: bookPayload() }, demoClient, noBarber), /barbero no está disponible/);
     expectError(() => run({ type: "appointment.book", payload: bookPayload({ id: "a-mateo" }) }, demoClient), /duplicado/);
   });
+
+  it("reserva hasta dos semanas adelante; más lejos, no", () => {
+    // Lunes 14/09 + 14 días = lunes 28/09, el último día que puede elegir.
+    const limit = run({ type: "appointment.book", payload: bookPayload({ date: "2026-09-28", time: "10:00" }) }, demoClient);
+    expect(find(limit, "a-test").date).toBe("2026-09-28");
+    expectError(
+      () => run({ type: "appointment.book", payload: bookPayload({ date: "2026-09-29", time: "10:00" }) }, demoClient),
+      /2 semanas/,
+    );
+  });
 });
 
 describe("turno manual (staff)", () => {
@@ -109,6 +119,25 @@ describe("turno manual (staff)", () => {
     expectError(() => run({ type: "appointment.book", payload: bookPayload({ clientPhone: "123" }) }), /Teléfono/);
     expectError(() => run({ type: "appointment.book", payload: bookPayload({ depositMethod: "credito" }) }), /crédito/);
   });
+
+  it("agenda sobre la ficha elegida en el buscador, sin mirar lo que se escribió", () => {
+    const next = run({ type: "appointment.book", payload: bookPayload({ clientId: "c-mateo", clientName: "Escrito a mano", clientPhone: "" }) });
+    expect(find(next, "a-test")).toMatchObject({ clientId: "c-mateo", clientName: "Mateo Rossi" });
+    expect(next.clients).toHaveLength(state.clients.length);
+    expectError(() => run({ type: "appointment.book", payload: bookPayload({ clientId: "c-fantasma" }) }), /no existe/, 404);
+  });
+
+  it("un cliente sin app queda solo en la agenda: sin ficha ni celular", () => {
+    const next = run({ type: "appointment.book", payload: bookPayload({ clientName: "Pasó a preguntar", clientPhone: "" }) });
+    expect(find(next, "a-test")).toMatchObject({ clientId: undefined, clientName: "Pasó a preguntar", clientPhone: "", verified: false });
+    expect(next.clients).toHaveLength(state.clients.length);
+    expectError(() => run({ type: "appointment.book", payload: bookPayload({ clientName: "A", clientPhone: "" }) }), /nombre/);
+  });
+
+  it("el staff agenda sin tope de fecha", () => {
+    const next = run({ type: "appointment.book", payload: bookPayload({ date: "2026-12-15", time: "10:00" }) });
+    expect(find(next, "a-test").date).toBe("2026-12-15");
+  });
 });
 
 describe("permisos", () => {
@@ -116,7 +145,6 @@ describe("permisos", () => {
     { type: "service.delete", id: "s-tijera" },
     { type: "appointment.charge", id: "a-demo-client", method: "efectivo" },
     { type: "client.delete", id: "c-mateo" },
-    { type: "cash.open" },
     { type: "settings.deposit", allowCash: false },
     { type: "demo.reset" },
   ];
@@ -137,6 +165,15 @@ describe("modificación de turnos", () => {
     const next = run({ type: "appointment.update", id: "a-demo-client", patch: { date: WEDNESDAY, time: "15:00" } }, demoClient);
     expect(find(next, "a-demo-client")).toMatchObject({ time: "15:00", rescheduledFrom: { date: WEDNESDAY, time: "11:00" } });
     expectError(() => run({ type: "appointment.update", id: "a-demo-client", patch: { serviceId: "s-tijera" } }, demoClient), /fecha y hora/);
+  });
+
+  it("el cliente tampoco se reprograma más allá de dos semanas", () => {
+    expectError(
+      () => run({ type: "appointment.update", id: "a-demo-client", patch: { date: "2026-10-05", time: "10:00" } }, demoClient),
+      /2 semanas/,
+    );
+    // El staff sí puede moverlo tan lejos como quiera.
+    expect(find(run({ type: "appointment.update", id: "a-demo-client", patch: { date: "2026-10-05", time: "10:00" } }), "a-demo-client").date).toBe("2026-10-05");
   });
 
   it("no se reprograma con menos de 3 horas", () => {
@@ -201,12 +238,6 @@ describe("cobros", () => {
     expect(find(next, "a-julian").deposit.amount + (find(next, "a-julian").balancePayment?.amount ?? 0)).toBe(7500);
   });
 
-  it("sin caja abierta no se cobra", () => {
-    const closed = { ...state, cashRegister: { open: false } };
-    expectError(() => run({ type: "appointment.charge", id: "a-mateo", method: "efectivo" }, admin, closed), /caja/);
-    expectError(() => run({ type: "appointment.deposit", id: "a-julian", method: "efectivo" }, admin, closed), /caja/);
-  });
-
   it("la transferencia que declara el cliente queda en revisión, no abonada", () => {
     const pending = run({ type: "appointment.book", payload: bookPayload({ depositMethod: "transferencia" }) }, demoClient);
     const declared = run({ type: "appointment.declareTransfer", id: "a-test", reference: "1234" }, demoClient, pending);
@@ -243,13 +274,6 @@ describe("cobros", () => {
     expectError(() => run({ type: "appointment.cancel", id: "a-test" }, system, paid), /no permitida/, 403);
   });
 
-  it("apertura y cierre de caja", () => {
-    const closed = run({ type: "cash.close", closure: { id: "cc-1", date: TODAY, expectedCash: 6000, countedCash: 5000, digital: 0, total: 6000 } });
-    expect(closed.cashRegister.open).toBe(false);
-    expect(closed.cashClosures[0]).toMatchObject({ id: "cc-1", openedAt: "08:30", countedCash: 5000 });
-    expectError(() => run({ type: "cash.close", closure: { id: "cc-2", date: TODAY, expectedCash: 0, countedCash: 0, digital: 0, total: 0 } }, admin, closed), /ya está cerrada/);
-    expect(run({ type: "cash.open" }, admin, closed).cashRegister.open).toBe(true);
-  });
 });
 
 describe("reserva que vence sin pagar", () => {
@@ -260,7 +284,7 @@ describe("reserva que vence sin pagar", () => {
     const after = new Date(MONDAY_9AM.getTime() + (HOLD_MINUTES + 1) * 60_000);
 
     // Cualquier comando posterior barre las reservas vencidas: no hace falta cron.
-    const swept = run({ type: "cash.open" }, admin, held, after);
+    const swept = run({ type: "demo.reset" }, admin, held, after);
     expect(find(swept, "a-test")).toMatchObject({ status: "cancelado", holdExpired: true, holdUntil: undefined });
     // Y el horario vuelve a estar disponible para otro cliente.
     expect(() => run({ type: "appointment.book", payload: bookPayload({ id: "a-otro" }) }, demoClient, swept, after)).not.toThrow();
@@ -278,7 +302,7 @@ describe("reserva que vence sin pagar", () => {
   it("acreditada la seña, el turno ya no vence", () => {
     const paid = run({ type: "appointment.deposit", id: "a-test", method: "mercadopago" }, system, bookDigital());
     const after = new Date(MONDAY_9AM.getTime() + (HOLD_MINUTES + 1) * 60_000);
-    expect(find(run({ type: "cash.open" }, admin, paid, after), "a-test").status).toBe("confirmado");
+    expect(find(run({ type: "demo.reset" }, admin, paid, after), "a-test").status).toBe("confirmado");
   });
 });
 
@@ -323,10 +347,8 @@ describe("alcance del barbero", () => {
     expect(run({ type: "block.create", block: { id: "blk-x", barberId: "b-nico", date: WEDNESDAY, start: "10:00", end: "11:00", reason: "Franco" } }, barberNico).blocks.some((b) => b.id === "blk-x")).toBe(true);
   });
 
-  it("no toca la plata del local, el catálogo ni el equipo", () => {
+  it("no toca el catálogo, el equipo ni la configuración", () => {
     const ownerOnly: Command[] = [
-      { type: "cash.open" },
-      { type: "cash.close", closure: { id: "cc-x", date: TODAY, expectedCash: 0, countedCash: 0, digital: 0, total: 0 } },
       { type: "service.delete", id: "s-tijera" },
       { type: "product.stock", id: "p-clay", delta: 1 },
       { type: "barber.delete", id: "b-diego" },

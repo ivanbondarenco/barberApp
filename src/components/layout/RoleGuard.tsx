@@ -3,11 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, type ReactNode } from "react";
 import { SkeletonList } from "@/components/ui/States";
-import type { Role } from "@/lib/types";
+import type { Role, Session } from "@/lib/types";
 import { useAppStore, useHydrated, useLiveSync } from "@/store/useAppStore";
 
-export function homeFor(role: Role): string {
-  return role === "cliente" ? "/cliente/reservar" : "/admin/agenda";
+/** Pantalla donde el cliente elige en qué barberías se atiende. */
+export const CLIENT_SHOPS_PATH = "/cliente/barberias";
+
+/** Adónde va cada sesión al entrar. Un cliente sin barbería primero tiene que elegir una. */
+export function homeFor(session: Pick<Session, "role" | "shop">): string {
+  if (session.role !== "cliente") return "/admin/agenda";
+  return session.shop ? "/cliente/reservar" : CLIENT_SHOPS_PATH;
 }
 
 /**
@@ -16,8 +21,19 @@ export function homeFor(role: Role): string {
  *
  * `role` acepta una lista: el panel del local lo comparten el dueño y los barberos, y cada
  * pantalla de adentro decide qué mostrarle a cada uno.
+ *
+ * `needsShop`: la pantalla opera sobre una barbería. Un cliente que todavía no eligió ninguna
+ * va primero a elegir (la pantalla de elegir es la única que no la necesita).
  */
-export function RoleGuard({ role, children }: { role: Role | Role[]; children: ReactNode }) {
+export function RoleGuard({
+  role,
+  needsShop = true,
+  children,
+}: {
+  role: Role | Role[];
+  needsShop?: boolean;
+  children: ReactNode;
+}) {
   const router = useRouter();
   const hydrated = useHydrated();
   const session = useAppStore((s) => s.session);
@@ -26,13 +42,13 @@ export function RoleGuard({ role, children }: { role: Role | Role[]; children: R
 
   // Estable entre renders: si no, el efecto se dispararía en cada uno.
   const allowed = useMemo(() => (Array.isArray(role) ? role : [role]), [Array.isArray(role) ? role.join() : role]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ok = !!session && allowed.includes(session.role);
+  const ok = !!session && allowed.includes(session.role) && (!needsShop || !!session.shop);
 
   useEffect(() => {
     if (!hydrated || !synced) return;
     if (!session) router.replace("/auth/login");
-    else if (!allowed.includes(session.role)) router.replace(homeFor(session.role));
-  }, [hydrated, synced, session, router, allowed]);
+    else if (!allowed.includes(session.role) || (needsShop && !session.shop)) router.replace(homeFor(session));
+  }, [hydrated, synced, session, router, allowed, needsShop]);
 
   if (!hydrated || !ok) {
     return (

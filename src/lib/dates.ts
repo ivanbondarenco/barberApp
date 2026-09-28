@@ -59,6 +59,39 @@ export function monthRange(iso: string): { from: string; to: string } {
   return { from, to };
 }
 
+/** Mismo día de otro mes (recortado al último día si ese mes es más corto). */
+export function addMonths(iso: string, months: number): string {
+  const d = fromISODate(iso);
+  const target = new Date(d.getFullYear(), d.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d.getDate(), lastDay));
+  return toISODate(target);
+}
+
+export function firstOfMonth(iso: string): string {
+  const d = fromISODate(iso);
+  return toISODate(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+export function sameMonth(a: string, b: string): boolean {
+  return a.slice(0, 7) === b.slice(0, 7);
+}
+
+/**
+ * Semanas (Lun→Dom) que cubren el mes de `iso`, para dibujar un calendario mensual.
+ * Las casillas de relleno vienen en `null`: no son días de este mes.
+ */
+export function monthGrid(iso: string): (string | null)[][] {
+  const first = firstOfMonth(iso);
+  const start = fromISODate(first);
+  const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  const firstDow = start.getDay() === 0 ? 7 : start.getDay();
+  const cells: (string | null)[] = Array.from({ length: firstDow - 1 }, () => null);
+  for (let i = 0; i < daysInMonth; i++) cells.push(addDays(first, i));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+}
+
 export function isoWeekNumber(iso: string): number {
   const d = fromISODate(iso);
   const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

@@ -34,11 +34,35 @@ export interface IssuedOtp {
  * Genera un código, lo guarda hasheado y lo manda por WhatsApp.
  * Pedir otro código reemplaza al anterior y reinicia los intentos.
  */
-export async function issueOtp(
+export async function issueOtp(shopId: string, identifier: string, purpose: OtpPurpose, phone: string): Promise<IssuedOtp> {
+  const ready = await whatsappReady(shopId);
+  if (!ready && !debugMode()) {
+    throw new DomainError("Esta barbería todavía no configuró WhatsApp. Escribile al local para que te dé acceso.", 503);
+  }
+  return issueCode(shopId, identifier, purpose, ready ? (code) => sendOtp(shopId, phone, code) : undefined);
+}
+
+/**
+ * Igual que `issueOtp`, pero el código lo entrega quien llama (hoy, por mail).
+ * `send` devuelve `false` si no pudo mandarlo: sin otra vía, el trámite no puede seguir.
+ */
+export async function issueOtpWith(
   shopId: string,
   identifier: string,
   purpose: OtpPurpose,
-  phone: string,
+  send: (code: string) => boolean,
+): Promise<IssuedOtp> {
+  return issueCode(shopId, identifier, purpose, (code) => {
+    if (!send(code)) throw new DomainError("No pudimos enviarte el código. Probá de nuevo en un momento.", 502);
+  });
+}
+
+/** El código en sí: cooldown, generación, guardado hasheado y entrega. */
+async function issueCode(
+  shopId: string,
+  identifier: string,
+  purpose: OtpPurpose,
+  deliver: ((code: string) => void | Promise<void>) | undefined,
 ): Promise<IssuedOtp> {
   const db = await getDb();
   const now = Date.now();
@@ -55,9 +79,8 @@ export async function issueOtp(
     }
   }
 
-  const ready = await whatsappReady(shopId);
-  if (!ready && !debugMode()) {
-    throw new DomainError("Esta barbería todavía no configuró WhatsApp. Escribile al local para que te dé acceso.", 503);
+  if (!deliver && !debugMode()) {
+    throw new DomainError("No hay por dónde enviarte el código. Escribile al local para que te dé acceso.", 503);
   }
 
   // randomInt del módulo crypto: no alcanza con Math.random para algo que da acceso a una cuenta.
@@ -79,11 +102,11 @@ export async function issueOtp(
   );
   await persist();
 
-  if (ready) {
-    await sendOtp(shopId, phone, code);
+  if (deliver) {
+    await deliver(code);
     return {};
   }
-  // Sin WhatsApp solo se llega acá en modo debug.
+  // Sin forma de entregarlo solo se llega acá en modo debug.
   console.warn(`[OTP_DEBUG] ${purpose} ${identifier} → ${code}`);
   return { code };
 }
@@ -91,8 +114,8 @@ export async function issueOtp(
 /**
  * Valida el código. Con `consume` (por defecto) lo invalida: sirve una sola vez.
  *
- * La recuperación de PIN lo verifica primero sin consumirlo —para habilitar el paso siguiente—
- * y recién lo consume al guardar el PIN nuevo.
+ * La recuperación de contraseña lo verifica primero sin consumirlo —para habilitar el paso siguiente—
+ * y recién lo consume al guardar la contraseña nueva.
  */
 export async function consumeOtp(
   shopId: string,

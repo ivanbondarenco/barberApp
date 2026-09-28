@@ -21,6 +21,7 @@ export default function FichaClientePage() {
   const { id } = useParams<{ id: string }>();
   const profile = useAppStore((s) => s.clients.find((c) => c.id === id));
   const appointments = useAppStore((s) => s.appointments);
+  const info = useAppStore((s) => s.businessInfo);
   const [editOpen, setEditOpen] = useState(false);
   const [bookOpen, setBookOpen] = useState(false);
 
@@ -53,7 +54,7 @@ export default function FichaClientePage() {
         </p>
         <div className="mt-4 grid w-full grid-cols-4 gap-2">
           <Action icon={Phone} label="Llamar" href={`tel:${profile.phone.replace(/\s/g, "")}`} />
-          <Action icon={Smartphone} label="WhatsApp" href={whatsappLink(profile.phone, `Hola ${profile.name.split(" ")[0]}, te escribimos de D.S Studio.`)} />
+          <Action icon={Smartphone} label="WhatsApp" href={whatsappLink(profile.phone, `Hola ${profile.name.split(" ")[0]}, te escribimos de ${info.name}.`)} />
           <Action icon={CalendarPlus} label="Turno" onClick={() => setBookOpen(true)} />
           <Action icon={Pencil} label="Editar" onClick={() => setEditOpen(true)} />
         </div>
@@ -116,7 +117,7 @@ export default function FichaClientePage() {
       </Section>
 
       <ClientFormSheet open={editOpen} client={profile} onClose={() => setEditOpen(false)} onDeleted={() => router.replace("/admin/clientes", { transitionTypes: [...NAV.back] })} />
-      <AppointmentFormSheet open={bookOpen} onClose={() => setBookOpen(false)} prefill={{ clientName: profile.name, clientPhone: profile.phone }} />
+      <AppointmentFormSheet open={bookOpen} onClose={() => setBookOpen(false)} prefill={{ clientId: profile.id, clientName: profile.name, clientPhone: profile.phone }} />
     </Page>
   );
 }

@@ -14,7 +14,6 @@ import { useAppStore } from "@/store/useAppStore";
 function routeMeta(pathname: string): { title: string; backHref?: string } {
   if (pathname.startsWith("/admin/turno/")) return { title: "Turno", backHref: "/admin/agenda" };
   if (pathname.startsWith("/admin/clientes/")) return { title: "Cliente", backHref: "/admin/clientes" };
-  if (pathname === "/admin/finanzas/cierre") return { title: "Cierre de caja", backHref: "/admin/finanzas" };
   if (pathname === "/admin/clientes") return { title: "Clientes", backHref: "/admin/agenda" };
   if (pathname === "/admin/equipo") return { title: "Equipo", backHref: "/admin/agenda" };
   if (pathname === "/admin/configuracion") return { title: "Configuración", backHref: "/admin/agenda" };
@@ -25,7 +24,7 @@ function routeMeta(pathname: string): { title: string; backHref?: string } {
     "/admin/servicios": "Catálogo",
     "/admin/tienda": "Tienda",
   };
-  return { title: titles[pathname] ?? "D.S Studio" };
+  return { title: titles[pathname] ?? "BarberApp" };
 }
 
 const AGENDA_CHILDREN = ["/admin/turno", "/admin/clientes", "/admin/equipo", "/admin/configuracion", "/admin/recordatorios"];

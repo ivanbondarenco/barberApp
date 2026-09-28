@@ -2,7 +2,7 @@
  * Reglas de negocio compartidas entre cliente (actualización optimista) y servidor (fuente de verdad).
  * Cada alta, baja o modificación es un `Command` que se aplica con `applyCommand`.
  */
-import { fromISODate, hoursUntil, nowTime } from "./dates";
+import { fromISODate, hoursUntil } from "./dates";
 import { initials, phoneKey } from "./format";
 import {
   CASH_DEPOSIT_DEADLINE_HOURS,
@@ -15,14 +15,12 @@ import {
   noShowCount,
   splitDeposit,
 } from "./pricing";
-import { buildSlots, cashDepositDeadline } from "./schedule";
+import { buildSlots, cashDepositDeadline, CLIENT_BOOKING_DAYS, withinClientWindow } from "./schedule";
 import type {
   Appointment,
   Barber,
   BusinessHours,
   BusinessInfo,
-  CashClosure,
-  CashRegister,
   ClientProfile,
   DayHours,
   DepositSettings,
@@ -41,8 +39,6 @@ export interface DomainState {
   appointments: Appointment[];
   blocks: TimeBlock[];
   depositSettings: DepositSettings;
-  cashRegister: CashRegister;
-  cashClosures: CashClosure[];
   businessHours: BusinessHours;
   businessInfo: BusinessInfo;
   integrations: IntegrationSettings;
@@ -51,7 +47,7 @@ export interface DomainState {
 /**
  * Quién ejecuta el comando.
  * - `admin`: dueño del local, puede todo.
- * - `barbero`: solo su propia agenda; no toca caja, catálogo, equipo ni configuración.
+ * - `barbero`: solo su propia agenda; no toca catálogo, equipo ni configuración.
  * - `cliente`: solo lo propio, y únicamente los comandos de `CLIENT_COMMANDS`.
  * - `sistema`: webhook de la pasarela. Es el ÚNICO que puede acreditar un pago online.
  */
@@ -77,7 +73,15 @@ export interface BookPayload {
   id: string;
   /** Solo turnos manuales: id a usar si el cliente todavía no existe. */
   newClientId?: string;
+  /**
+   * Solo staff: ficha ya existente elegida del buscador. Manda sobre `clientName`/`clientPhone`.
+   */
+  clientId?: string;
   clientName: string;
+  /**
+   * Vacío solo en un turno manual "sin app": queda como recordatorio en la agenda, sin ficha
+   * en el CRM ni recordatorios por WhatsApp.
+   */
   clientPhone: string;
   barberId: string;
   serviceId: string;
@@ -129,8 +133,6 @@ export type Command =
   | { type: "settings.deposit"; allowCash?: boolean; rate?: number }
   | { type: "settings.hours"; dayIndex: number; patch: Partial<DayHours> }
   | { type: "settings.info"; patch: Partial<BusinessInfo> }
-  | { type: "cash.open" }
-  | { type: "cash.close"; closure: Omit<CashClosure, "openedAt" | "closedAt"> }
   | { type: "demo.reset" };
 
 const fail = (message: string, status = 400): never => {
@@ -151,7 +153,7 @@ const CLIENT_COMMANDS = new Set<Command["type"]>([
   "client.upsert",
 ]);
 
-/** Reservado al dueño: plata del local, catálogo, equipo y configuración. */
+/** Reservado al dueño: catálogo, equipo y configuración del local. */
 const OWNER_COMMANDS = new Set<Command["type"]>([
   "service.upsert",
   "service.delete",
@@ -164,8 +166,6 @@ const OWNER_COMMANDS = new Set<Command["type"]>([
   "settings.deposit",
   "settings.hours",
   "settings.info",
-  "cash.open",
-  "cash.close",
   "demo.reset",
 ]);
 
@@ -245,6 +245,15 @@ function assertSlot(
   if (!free) fail("Ese horario ya no está disponible. Elegí otro.", 409);
 }
 
+/**
+ * El cliente reserva hasta dos semanas por adelantado; el staff, cuando quiera.
+ * Vive acá (y no solo en la pantalla) para que también la respete quien llame a la API.
+ */
+function assertClientWindow(date: string, now: Date) {
+  if (!withinClientWindow(date, now))
+    fail(`Podés reservar hasta ${CLIENT_BOOKING_DAYS / 7} semanas por adelantado. Para una fecha más lejana, escribinos.`);
+}
+
 const cleanText = (value: string | undefined, max: number) => value?.trim().slice(0, max) || undefined;
 
 function validPhone(phone: string) {
@@ -278,29 +287,34 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       assertOwnChair(actor, barber.id);
 
       let clients = state.clients;
-      let client: ClientProfile;
+      /** Ficha del cliente. Queda sin definir en un turno manual sin app. */
+      let client: ClientProfile | undefined;
+      /** Turno sin ficha: solo el nombre que dictó el cliente en el mostrador. */
+      let walkIn: { name: string } | undefined;
       // El cliente nunca decide si pagó: arranca en `pendiente` salvo que el crédito lo cubra.
       let depositPaid = false;
       let holdUntil: string | undefined;
       const method = p.depositMethod;
 
       if (actor.role === "cliente") {
-        client = clients.find((c) => c.id === actor.clientId) ?? fail("Perfil de cliente inexistente", 403);
+        const self = clients.find((c) => c.id === actor.clientId) ?? fail("Perfil de cliente inexistente", 403);
+        client = self;
+        assertClientWindow(p.date, now);
         if (deposit === 0) {
           // El local no pide seña: no hay nada que acreditar ni horario que retener.
           depositPaid = true;
         } else if (method === "efectivo") {
           if (!state.depositSettings.allowCash) fail("El local no acepta seña en efectivo");
           // Quien ya faltó sin avisar reserva pagando por adelantado: es la política publicada.
-          if (noShowCount(state.appointments, client.id) >= NO_SHOW_DEPOSIT_LIMIT)
+          if (noShowCount(state.appointments, self.id) >= NO_SHOW_DEPOSIT_LIMIT)
             fail("Por ausencias anteriores, este local te pide abonar la seña por adelantado");
           const deadline = cashDepositDeadline(p.date, p.time, state.businessHours, CASH_DEPOSIT_DEADLINE_HOURS);
           if (deadline.getTime() <= now.getTime()) fail("Ya pasó el plazo para la seña en efectivo");
         } else if (method === "credito") {
           // Único caso en que el turno nace pago: el crédito se verifica y se descuenta acá.
-          if (client.credit < deposit) fail("Tu crédito no alcanza para cubrir la seña");
+          if (self.credit < deposit) fail("Tu crédito no alcanza para cubrir la seña");
           depositPaid = true;
-          clients = clients.map((c) => (c.id === client.id ? { ...c, credit: c.credit - deposit } : c));
+          clients = clients.map((c) => (c.id === self.id ? { ...c, credit: c.credit - deposit } : c));
         } else {
           if (method === "mercadopago" && !state.integrations.mercadopagoReady)
             fail("El pago online no está disponible. Elegí otro medio.");
@@ -308,35 +322,45 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           holdUntil = new Date(now.getTime() + HOLD_MINUTES * 60_000).toISOString();
         }
       } else {
-        const name = p.clientName.trim();
-        if (name.length < 2) fail("Ingresá el nombre del cliente");
-        if (!validPhone(p.clientPhone)) fail("Teléfono inválido");
         if (method === "credito") fail("El crédito lo usa el cliente desde la app");
         // El staff sí puede marcarla cobrada: tiene la plata o el comprobante delante.
         // Con seña 0 no hay nada que cobrar, así que queda saldada sola.
         depositPaid = deposit === 0 || p.depositPaid === true;
-        const existing = clients.find((c) => phoneKey(c.phone) === phoneKey(p.clientPhone));
-        if (existing) {
-          client = existing;
+        const name = p.clientName.trim();
+        const phone = p.clientPhone.trim();
+        if (p.clientId) {
+          // Ficha elegida del buscador: el nombre y el teléfono salen de ella.
+          client = clients.find((c) => c.id === p.clientId) ?? fail("El cliente no existe", 404);
+        } else if (!phone) {
+          // Cliente sin app: solo para organizar la agenda, no se abre ficha en el CRM.
+          if (name.length < 2) fail("Ingresá el nombre del cliente");
+          walkIn = { name };
         } else {
-          client = {
-            id: p.newClientId ?? fail("Falta el id del cliente nuevo"),
-            name,
-            phone: p.clientPhone.trim(),
-            notifications: { reminder24h: true, whatsapp: true },
-            credit: 0,
-            createdAt: stamp,
-          };
-          clients = [...clients, client];
+          if (name.length < 2) fail("Ingresá el nombre del cliente");
+          if (!validPhone(phone)) fail("Teléfono inválido");
+          const existing = clients.find((c) => phoneKey(c.phone) === phoneKey(phone));
+          if (existing) {
+            client = existing;
+          } else {
+            client = {
+              id: p.newClientId ?? fail("Falta el id del cliente nuevo"),
+              name,
+              phone,
+              notifications: { reminder24h: true, whatsapp: true },
+              credit: 0,
+              createdAt: stamp,
+            };
+            clients = [...clients, client];
+          }
         }
       }
 
       const appointment: Appointment = {
         id: p.id,
-        clientId: client.id,
-        clientName: client.name,
-        clientPhone: client.phone,
-        verified: actor.role === "cliente" || !!client.hasAccount,
+        clientId: client?.id,
+        clientName: client?.name ?? walkIn?.name ?? fail("Falta el cliente del turno"),
+        clientPhone: client?.phone ?? "",
+        verified: actor.role === "cliente" || !!client?.hasAccount,
         barberId: barber.id,
         serviceId: service.id,
         serviceName: service.name,
@@ -369,6 +393,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         if (patch.serviceId || patch.barberId || patch.notes !== undefined) fail("Solo podés cambiar la fecha y hora", 403);
         if (hoursUntil(current.date, current.time, now) < FREE_CANCELLATION_HOURS)
           fail(`Solo podés reprogramar hasta ${FREE_CANCELLATION_HOURS}h antes`);
+        if (patch.date) assertClientWindow(patch.date, now);
       }
       const service = patch.serviceId
         ? state.services.find((s) => s.id === patch.serviceId) ?? fail("Servicio inexistente")
@@ -441,9 +466,6 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       const current = ownAppointment(state, actor, command.id);
       if (current.status !== "confirmado") fail("El turno no está activo");
       if (isDepositPaid(current.deposit)) fail("La seña ya está abonada");
-      // Cobro en mostrador: tiene que haber caja abierta. El webhook entra a cualquier hora.
-      if (isStaffActor(actor) && command.method === "efectivo" && !state.cashRegister.open)
-        fail("Abrí la caja para registrar cobros");
       return {
         ...state,
         appointments: replace(state.appointments, {
@@ -549,7 +571,6 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
 
     case "appointment.charge": {
       const current = ownAppointment(state, actor, command.id);
-      if (!state.cashRegister.open) fail("Abrí la caja para registrar cobros");
       if (current.status !== "confirmado") fail("El turno no está pendiente de cobro");
       const t = appointmentTotals(current);
       // Si la seña no se había acreditado (pendiente o en revisión), se cobra entera en el sillón.
@@ -723,22 +744,15 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       return { ...state, businessHours: state.businessHours.map((d, i) => (i === command.dayIndex ? merged : d)) };
     }
 
-    case "settings.info":
-      return { ...state, businessInfo: { ...state.businessInfo, ...command.patch } };
-
-    case "cash.open":
-      return state.cashRegister.open ? state : { ...state, cashRegister: { open: true, openedAt: nowTime() } };
-
-    case "cash.close":
-      if (!state.cashRegister.open) fail("La caja ya está cerrada");
-      return {
-        ...state,
-        cashRegister: { open: false },
-        cashClosures: [
-          { ...command.closure, openedAt: state.cashRegister.openedAt, closedAt: stamp },
-          ...state.cashClosures,
-        ],
-      };
+    case "settings.info": {
+      const patch = { ...command.patch };
+      if (patch.name !== undefined) {
+        // El nombre es con lo que el local aparece ante sus clientes: no puede quedar vacío.
+        patch.name = patch.name.trim();
+        if (patch.name.length < 3) fail("Ingresá el nombre de la barbería");
+      }
+      return { ...state, businessInfo: { ...state.businessInfo, ...patch } };
+    }
 
     case "demo.reset":
       // El servidor regenera los datos; en el cliente no hay cambio optimista.

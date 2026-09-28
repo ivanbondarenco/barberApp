@@ -46,11 +46,13 @@ function Reservar() {
   const barbers = useMemo(() => allBarbers.filter((b) => b.active), [allBarbers]);
 
   const presetService = services.find((s) => s.id === params.get("servicio"))?.id ?? null;
+  // Fecha elegida en el calendario de "Mis turnos": se arranca eligiendo el servicio, con ese día puesto.
+  const presetDate = params.get("fecha");
   const [step, setStep] = useState<Step>(presetService ? 2 : 1);
   const [direction, setDirection] = useState(1);
   const [serviceId, setServiceId] = useState<string | null>(presetService);
   const [barberId, setBarberId] = useState(barbers.find((b) => b.id === params.get("barbero"))?.id ?? barbers[0]?.id ?? "");
-  const [date, setDate] = useState<string | null>(null);
+  const [date, setDate] = useState<string | null>(presetDate);
   const [time, setTime] = useState<string | null>(null);
   const [choice, setChoice] = useState<DepositChoice>("digital");
   const [notes, setNotes] = useState("");

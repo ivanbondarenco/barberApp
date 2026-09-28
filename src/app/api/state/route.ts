@@ -1,4 +1,4 @@
-import { getCurrentUser, visitorShop } from "@/server/auth";
+import { getAccount, visitorShop } from "@/server/auth";
 import { errorResponse, json } from "@/server/http";
 import { listShops, loadState } from "@/server/repository";
 import { stateForActor } from "@/server/visibility";
@@ -9,24 +9,27 @@ export const dynamic = "force-dynamic";
  * Estado visible para la sesión actual, siempre acotado a una barbería.
  * `?v=<versión>` responde `unchanged` si esa barbería no cambió.
  *
- * Sin sesión y sin barbería elegida se devuelve la lista para que el visitante elija.
+ * `shops` (todas las barberías publicadas) va cuando hay que elegir: sin barbería activa, o
+ * para un cliente, que puede sumarse a más.
  */
 export async function GET(request: Request) {
   try {
-    const current = await getCurrentUser();
-    const shop = current?.session.shop ?? (await visitorShop());
-    if (!shop) return json({ version: 0, session: null, shops: await listShops() });
+    const account = await getAccount();
+    const shop = account ? account.session.shop : await visitorShop();
+    const shops = !shop || account?.user.role === "cliente" ? await listShops() : undefined;
+    if (!shop) return json({ version: 0, session: account?.session ?? null, shop: null, shops });
 
     const { state, version } = await loadState(shop.id);
     const known = Number(new URL(request.url).searchParams.get("v"));
     if (known && known === version) {
-      return json({ unchanged: true, version, session: current?.session ?? null, shop });
+      return json({ unchanged: true, version, session: account?.session ?? null, shop, shops });
     }
     return json({
       version,
-      session: current?.session ?? null,
+      session: account?.session ?? null,
       shop,
-      state: stateForActor(state, current?.actor ?? null),
+      shops,
+      state: stateForActor(state, account?.actor ?? null),
     });
   } catch (error) {
     return errorResponse(error);

@@ -1,4 +1,4 @@
-// Genera los íconos PWA (PNG) a partir de un SVG con la marca D.S Studio.
+// Genera los íconos PWA (PNG) a partir de un SVG con la marca de BarberApp.
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -15,10 +15,10 @@ function svg(size, padding) {
   <rect width="${size}" height="${size}" rx="${padding ? 0 : size * 0.22}" fill="#1D4ED8"/>
   <g transform="translate(${offset} ${offset}) scale(${s})">
     <text x="60" y="76" text-anchor="middle" font-size="54" fill="#FFFFFF"
-      font-family="Georgia, 'Times New Roman', serif" font-weight="700" letter-spacing="-2">DS</text>
+      font-family="Georgia, 'Times New Roman', serif" font-weight="700" letter-spacing="-2">BA</text>
     <line x1="28" y1="88" x2="92" y2="88" stroke="#DCE1FF" stroke-width="2" stroke-opacity="0.7"/>
-    <text x="60" y="102" text-anchor="middle" font-size="9.5" fill="#DCE1FF"
-      font-family="Arial, Helvetica, sans-serif" font-weight="700" letter-spacing="2.4">STUDIO</text>
+    <text x="60" y="102" text-anchor="middle" font-size="8.5" fill="#DCE1FF"
+      font-family="Arial, Helvetica, sans-serif" font-weight="700" letter-spacing="1.6">BARBERAPP</text>
   </g>
 </svg>`;
 }

@@ -11,18 +11,22 @@ import {
   History,
   LogOut,
   type LucideIcon,
-  Receipt,
   Settings,
+  Store,
   UserRound,
   Users,
+  Check,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { NAV } from "@/components/motion/Page";
+import { CLIENT_SHOPS_PATH } from "@/components/layout/RoleGuard";
 import { Sheet } from "@/components/ui/Sheet";
 import { initials } from "@/lib/format";
 import { useAppStore } from "@/store/useAppStore";
+import { toast } from "@/store/useToast";
 import { BrandMark } from "./Logo";
 
 interface AppHeaderProps {
@@ -41,6 +45,7 @@ interface MenuLink {
 const CLIENT_LINKS: MenuLink[] = [
   { href: "/cliente/perfil", label: "Mi perfil", icon: UserRound },
   { href: "/cliente/historial", label: "Historial de turnos", icon: History },
+  { href: CLIENT_SHOPS_PATH, label: "Mis barberías", icon: Store },
   { href: "/politicas", label: "Políticas de seña", icon: FileText },
   { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
@@ -49,11 +54,10 @@ const OWNER_LINKS: MenuLink[] = [
   { href: "/admin/clientes", label: "Clientes", icon: Contact },
   { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
   { href: "/admin/equipo", label: "Equipo", icon: Users },
-  { href: "/admin/finanzas/cierre", label: "Cierre de caja", icon: Receipt },
   { href: "/admin/configuracion", label: "Configuración", icon: Settings },
 ];
 
-/** El barbero no maneja caja, equipo ni configuración del local. */
+/** El barbero no maneja el equipo ni la configuración del local. */
 const BARBER_LINKS: MenuLink[] = [
   { href: "/admin/clientes", label: "Clientes", icon: Contact },
   { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
@@ -94,6 +98,7 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
           </span>
         )}
         {right}
+        {session?.role === "cliente" && session.shop && <ShopSwitcher />}
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
@@ -143,5 +148,76 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
         </nav>
       </Sheet>
     </header>
+  );
+}
+
+/**
+ * Barbería activa del cliente. Si se atiende en varias, desde acá pasa de una a otra:
+ * cada una tiene sus turnos, su tienda y su seña.
+ */
+function ShopSwitcher() {
+  const router = useRouter();
+  const shop = useAppStore((s) => s.session?.shop);
+  const shops = useAppStore((s) => s.session?.shops ?? []);
+  const membership = useAppStore((s) => s.membership);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (!shop) return null;
+
+  const select = async (id: string) => {
+    if (id === shop.id) return setOpen(false);
+    setBusy(id);
+    const result = await membership(id, "select");
+    setBusy(null);
+    if (!result.ok) return toast(result.error, "error");
+    setOpen(false);
+    router.replace("/cliente/reservar");
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`Barbería activa: ${shop.name}`}
+        className="tap chip min-h-10 max-w-[40%] bg-surface-lowest text-primary shadow-xs"
+      >
+        <Store size={13} aria-hidden /> <span className="truncate">{shop.name}</span>
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Tus barberías" subtitle="Elegí en cuál querés reservar">
+        <div className="flex flex-col gap-3 pb-2">
+          <ul className="overflow-hidden rounded-2xl bg-surface-low">
+            {shops.map((s) => (
+              <li key={s.id} className="border-b border-surface-high last:border-0">
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => void select(s.id)}
+                  aria-current={s.id === shop.id ? "true" : undefined}
+                  className="row w-full text-left font-medium hover:bg-surface-container"
+                >
+                  <Store size={19} className="text-primary" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                  {s.id === shop.id ? (
+                    <Check size={18} className="text-primary" aria-label="Activa" />
+                  ) : busy === s.id ? (
+                    <span className="text-[13px] text-secondary">…</span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Link
+            href={CLIENT_SHOPS_PATH}
+            transitionTypes={[...NAV.forward]}
+            onClick={() => setOpen(false)}
+            className="tap btn-secondary"
+          >
+            <Plus size={17} /> Sumar otra barbería
+          </Link>
+        </div>
+      </Sheet>
+    </>
   );
 }

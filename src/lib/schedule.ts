@@ -6,6 +6,22 @@ export const AFTERNOON_FROM = "14:00";
 /** Anticipación mínima para reservar un turno del día. */
 export const MIN_LEAD_MIN = 30;
 
+/**
+ * Hasta dónde puede reservar un cliente por su cuenta: dos semanas desde hoy.
+ * El staff no tiene tope — agenda el día que quiera.
+ */
+export const CLIENT_BOOKING_DAYS = 14;
+
+/** Último día que un cliente puede elegir al reservar (inclusive). */
+export function clientBookingLimit(now = new Date()): string {
+  return addDays(toISODate(now), CLIENT_BOOKING_DAYS);
+}
+
+/** ¿Puede un cliente reservar ese día por su cuenta? */
+export function withinClientWindow(date: string, now = new Date()): boolean {
+  return date >= toISODate(now) && date <= clientBookingLimit(now);
+}
+
 export const DEFAULT_BUSINESS_HOURS: BusinessHours = [
   { open: "09:00", close: "20:00", closed: true }, // Domingo
   { open: "09:00", close: "20:00", closed: false },
