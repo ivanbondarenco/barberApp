@@ -2,6 +2,7 @@ import "server-only";
 import { DomainError } from "@/lib/commands";
 import { onlyDigits } from "@/lib/format";
 import { getSecret } from "./secrets";
+import { reportError } from "./monitor";
 
 const API = "https://graph.facebook.com/v21.0";
 
@@ -56,7 +57,7 @@ export async function sendOtp(shopId: string, phone: string, code: string): Prom
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error(`WhatsApp Cloud API → ${res.status}`, detail.slice(0, 500));
+    await reportError("whatsapp", new Error(`Cloud API → ${res.status}`), { detail: detail.slice(0, 300) });
     throw new DomainError("No pudimos enviarte el código. Probá de nuevo en un momento.", 502);
   }
 }

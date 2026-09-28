@@ -17,6 +17,7 @@ import { initials, phoneKey, uid } from "@/lib/format";
 import { DEFAULT_DEPOSIT_RATE } from "@/lib/pricing";
 import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
 import type { ClientProfile, Shop } from "@/lib/types";
+import { testModeAllowed } from "./config";
 import { hashPassword, normalizeIdentifier } from "./crypto";
 import { getDb, LEGACY_SHOP_ID, persist, queryAll, queryOne, transaction } from "./db";
 import { notifyAppointment } from "./notify";
@@ -237,7 +238,7 @@ function seedUsers(db: Database, stamp: string) {
  */
 export async function ensureSeeded(): Promise<Database> {
   const db = await getDb();
-  if (process.env.SEED_DEMO === "1" && !queryOne(db, "SELECT id FROM shops LIMIT 1")) {
+  if (process.env.SEED_DEMO === "1" && testModeAllowed() && !queryOne(db, "SELECT id FROM shops LIMIT 1")) {
     const stamp = new Date().toISOString();
     transaction(db, () => {
       db.run("INSERT INTO shops (id, slug, name, created_at) VALUES (?, ?, ?, ?)", [

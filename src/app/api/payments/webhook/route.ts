@@ -1,6 +1,7 @@
 import { getPayment, parseExternalReference, verifyWebhookSignature } from "@/server/mercadopago";
 import { executeCommand } from "@/server/repository";
 import { claimPaymentEvent } from "@/server/secrets";
+import { reportError } from "@/server/monitor";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,9 @@ export async function POST(request: Request) {
     );
     return Response.json({ ok: true });
   } catch (error) {
-    console.error("Error procesando el webhook de Mercado Pago", error);
+    // Se responde 200 igual (si no, Mercado Pago reintenta en loop), pero se avisa: es una seña
+    // cobrada que puede no haberse acreditado.
+    await reportError("mercadopago.webhook", error);
     return Response.json({ ok: true });
   }
 }

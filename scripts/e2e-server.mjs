@@ -1,5 +1,6 @@
 // Levanta la app de producción con una base de datos descartable para los tests E2E.
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -16,6 +17,12 @@ const env = {
   DATABASE_PATH: path.join(dataDir, "e2e.db"),
   NEXT_TELEMETRY_DISABLED: "1",
   OTP_DEBUG: "1",
+  // La app compilada corre con NODE_ENV=production, que no admite OTP_DEBUG ni SEED_DEMO: este
+  // modo los habilita, y solo contra una dirección local (ver `testModeAllowed`).
+  E2E_TEST_MODE: "1",
+  APP_URL: `http://localhost:${port}`,
+  // Clave descartable por corrida: las credenciales de prueba se cifran igual que en producción.
+  SECRETS_KEY: randomBytes(32).toString("base64"),
   // Los tests parten de la barbería de demostración sembrada.
   SEED_DEMO: "1",
   // Sin SMTP: los tests NO pueden mandar mails de verdad. Next carga .env.local solo,
@@ -24,6 +31,8 @@ const env = {
   SMTP_USER: "",
   SMTP_PASSWORD: "",
   MAIL_FROM: "",
+  // Los errores que los tests provocan a propósito no tienen que llegar al canal de alertas.
+  ALERT_WEBHOOK_URL: "",
 };
 const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
 

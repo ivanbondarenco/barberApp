@@ -159,6 +159,12 @@ describe("migración de una base anterior a la multi-barbería", () => {
 
     const { getSecret } = await import("@/server/secrets");
     expect(await getSecret("mp_access_token", LEGACY_SHOP_ID)).toBe("TOKEN-VIEJO");
+
+    // Y en el archivo ya no está en claro: la migración la cifró.
+    const { getDb, queryOne } = await import("@/server/db");
+    const stored = queryOne<{ value: string }>(await getDb(), "SELECT value FROM secrets WHERE key = 'mp_access_token'")!.value;
+    expect(stored.startsWith("enc:v1:")).toBe(true);
+    expect(stored).not.toContain("TOKEN-VIEJO");
   });
 
   it("las cuentas siguen sirviendo y ahora admite el rol barbero", async () => {

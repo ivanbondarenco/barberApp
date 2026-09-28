@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { DomainError } from "@/lib/commands";
+import { reportError } from "./monitor";
 
 export function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
@@ -9,7 +10,7 @@ export function json(data: unknown, status = 200): Response {
 export function errorResponse(error: unknown): Response {
   if (error instanceof DomainError) return json({ error: error.message }, error.status);
   if (error instanceof z.ZodError) return json({ error: error.issues[0]?.message ?? "Datos inválidos" }, 422);
-  console.error(error);
+  void reportError("api", error);
   return json({ error: "Error inesperado. Probá de nuevo." }, 500);
 }
 

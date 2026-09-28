@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import initSqlJs, { type Database, type SqlValue } from "sql.js";
+import { encryptSecret, isEncrypted } from "./secret-box";
 
 /**
  * SQLite (sql.js / WebAssembly) persistido en disco.
@@ -146,6 +147,28 @@ function migrate(db: Database): void {
     db.run("ALTER TABLE users ADD COLUMN email_verified_at TEXT");
   }
   dropStarterServices(db);
+  encryptStoredSecrets(db);
+}
+
+/**
+ * v7: cifra las credenciales que se guardaron en claro antes de que existiera el cifrado.
+ *
+ * Idempotente: lo ya cifrado se reconoce por el prefijo y no se toca. Sin clave disponible (en
+ * producción sin SECRETS_KEY) no hace nada: la app igual se niega a arrancar en ese caso.
+ */
+function encryptStoredSecrets(db: Database): void {
+  if (!tableSql(db, "secrets")) return;
+  const rows = queryAll<{ scope: string; key: string; value: string }>(db, "SELECT scope, key, value FROM secrets");
+  for (const row of rows) {
+    if (!row.value.trim() || isEncrypted(row.value)) continue;
+    let encrypted: string;
+    try {
+      encrypted = encryptSecret(row.value.trim(), row.scope, row.key);
+    } catch {
+      return; // No hay clave: se cifra cuando se configure.
+    }
+    db.run("UPDATE secrets SET value = ? WHERE scope = ? AND key = ?", [encrypted, row.scope, row.key]);
+  }
 }
 
 /** Servicios de ejemplo que el alta de barbería creaba, con su precio inventado. */

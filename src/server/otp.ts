@@ -1,6 +1,7 @@
 import "server-only";
 import { randomInt, timingSafeEqual } from "node:crypto";
 import { DomainError } from "@/lib/commands";
+import { testModeAllowed } from "./config";
 import { sha256 } from "./crypto";
 import { getDb, persist, queryOne } from "./db";
 import { sendOtp, whatsappReady } from "./whatsapp";
@@ -17,10 +18,11 @@ const RESEND_COOLDOWN_SECONDS = 60;
 
 /**
  * En desarrollo y en los tests no hay cuenta de WhatsApp, así que el código viaja en la
- * respuesta en vez de enviarse. Se activa SOLO con esta variable, que jamás va a producción:
- * sin ella, una barbería sin WhatsApp configurado no puede emitir códigos.
+ * respuesta en vez de enviarse. Se activa SOLO con esta variable, y en producción además hace
+ * falta el modo de test E2E (ver `testModeAllowed`): aunque alguien la deje prendida en el
+ * servidor, los códigos no salen.
  */
-const debugMode = () => process.env.OTP_DEBUG === "1";
+const debugMode = () => process.env.OTP_DEBUG === "1" && testModeAllowed();
 
 const hash = (shopId: string, identifier: string, purpose: OtpPurpose, code: string) =>
   sha256(`${shopId}:${identifier}:${purpose}:${code}`);

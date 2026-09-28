@@ -166,22 +166,22 @@ test.describe("ausencias y recordatorios", () => {
     expect(target).toBeDefined();
 
     // La ventana del recordatorio es de 24 h, así que el turno se coloca a propósito dentro de
-    // ella. Se abre el local todo el día para que el hueco exista sin importar a qué hora
-    // corran los tests; el `demo.reset` del próximo archivo restaura el horario real.
-    const at = new Date(Date.now() + 3 * 3_600_000);
+    // ella, entre 2 y 6 horas adelante. Se abre el local todo el día para que el hueco exista sin
+    // importar a qué hora corran los tests; el `demo.reset` del próximo archivo restaura el horario.
+    // Cada horario candidato lleva SU fecha: de noche, "dentro de unas horas" ya es mañana.
     const pad = (n: number) => String(n).padStart(2, "0");
-    const date = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-    await runCommand(api, {
-      type: "settings.hours",
-      dayIndex: at.getDay(),
-      patch: { open: "00:00", close: "23:30", closed: false },
-    });
-
-    // Puede haber otro turno en ese hueco: se prueban los siguientes hasta encontrar uno libre.
     let placed = false;
-    for (let step = 0; step < 6 && !placed; step++) {
-      const slot = new Date(at.getTime() + step * 30 * 60_000);
-      const time = `${pad(slot.getHours())}:${slot.getMinutes() < 30 ? "00" : "30"}`;
+    for (let step = 0; step < 8 && !placed; step++) {
+      const slot = new Date(Date.now() + 2 * 3_600_000 + step * 30 * 60_000);
+      slot.setMinutes(slot.getMinutes() < 30 ? 0 : 30, 0, 0);
+      await runCommand(api, {
+        type: "settings.hours",
+        dayIndex: slot.getDay(),
+        patch: { open: "00:00", close: "23:30", closed: false },
+      });
+      const date = `${slot.getFullYear()}-${pad(slot.getMonth() + 1)}-${pad(slot.getDate())}`;
+      const time = `${pad(slot.getHours())}:${pad(slot.getMinutes())}`;
+      // Puede haber otro turno en ese hueco: se prueba el siguiente.
       placed = (await runCommand(api, { type: "appointment.update", id: target.id, patch: { date, time } })).status === 200;
     }
     await api.dispose();

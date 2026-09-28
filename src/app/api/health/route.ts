@@ -3,6 +3,7 @@ import path from "node:path";
 import { mailReady } from "@/server/mail";
 import { listShops } from "@/server/repository";
 import { storageStats } from "@/server/db";
+import { reportError } from "@/server/monitor";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function GET() {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    console.error("Health check falló", error);
+    await reportError("health", error);
     return Response.json({ status: "error" }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

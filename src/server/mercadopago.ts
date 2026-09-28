@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { DomainError } from "@/lib/commands";
 import type { Appointment, BusinessInfo } from "@/lib/types";
+import { reportError } from "./monitor";
 import { getSecret } from "./secrets";
 
 const API = "https://api.mercadopago.com";
@@ -40,7 +41,7 @@ async function call<T>(shopId: string, path: string, init?: RequestInit): Promis
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error(`Mercado Pago ${path} → ${res.status}`, detail.slice(0, 500));
+    await reportError("mercadopago.api", new Error(`${path} → ${res.status}`), { shopId, detail: detail.slice(0, 300) });
     throw new DomainError("No pudimos conectarnos con Mercado Pago. Probá de nuevo.", 502);
   }
   return (await res.json()) as T;

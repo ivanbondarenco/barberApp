@@ -1,10 +1,13 @@
 import "server-only";
 import { getDb, persist, queryOne } from "./db";
+import { reportError } from "./monitor";
 import { mutate } from "./repository";
+import { decryptSecret, encryptSecret } from "./secret-box";
 
 /**
  * Credenciales de la pasarela, guardadas por barbería y nunca expuestas al navegador.
  * El `scope` es el id de la barbería: cada local cobra con su propia cuenta de Mercado Pago.
+ * En la base van cifradas (ver `secret-box.ts`): el archivo solo no alcanza para leerlas.
  */
 export type SecretKey =
   | "mp_access_token"
@@ -33,7 +36,16 @@ export async function getSecret(key: SecretKey, shopId: string): Promise<string 
   const db = await getDb();
   const row = queryOne<{ value: string }>(db, "SELECT value FROM secrets WHERE scope = ? AND key = ?", [shopId, key]);
   const stored = row?.value.trim();
-  if (stored) return stored;
+  if (stored) {
+    try {
+      return decryptSecret(stored, shopId, key);
+    } catch (error) {
+      // No se cae a la variable de entorno: podría ser otra cuenta, y cobrar a nombre de otro
+      // es peor que no cobrar. Se avisa, y para la app la credencial queda sin cargar.
+      await reportError("secrets", error, { shopId, key, hint: "¿Cambió SECRETS_KEY? Volvé a cargar la credencial." });
+      return undefined;
+    }
+  }
   return process.env[ENV_FALLBACK[key]]?.trim() || undefined;
 }
 
@@ -49,7 +61,7 @@ export async function setSecret(key: SecretKey, value: string, shopId: string): 
       db.run(
         `INSERT INTO secrets (scope, key, value, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-        [shopId, key, clean, new Date().toISOString()],
+        [shopId, key, encryptSecret(clean, shopId, key), new Date().toISOString()],
       );
     },
     // Sube la versión de la barbería: `paymentSettings.mercadopagoReady` viaja en su estado.

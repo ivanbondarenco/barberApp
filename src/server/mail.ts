@@ -1,5 +1,6 @@
 import "server-only";
 import nodemailer, { type Transporter } from "nodemailer";
+import { reportError } from "./monitor";
 
 /**
  * Envío de mails por SMTP.
@@ -102,7 +103,7 @@ export async function sendMail({ to, subject, html, fromName, replyTo }: Mail): 
     });
     return true;
   } catch (error) {
-    console.error(`[mail] falló el envío de "${subject}" a ${to}:`, error);
+    await reportError("mail", error, { subject });
     return false;
   }
 }

@@ -7,3 +7,8 @@ test-results
 coverage
 .git
 *.tsbuildinfo
+# Credenciales locales: la imagen se configura con las variables del hosting, nunca con archivos.
+.env
+.env*.local
+# Ninguna base de datos entra a la imagen: vive en el volumen /data.
+*.db
