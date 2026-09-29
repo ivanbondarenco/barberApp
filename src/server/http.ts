@@ -14,6 +14,18 @@ export function errorResponse(error: unknown): Response {
   return json({ error: "Error inesperado. Probá de nuevo." }, 500);
 }
 
+/**
+ * Dirección pública de la app, para armar links que salen del servidor (Mercado Pago, mails).
+ *
+ * Sale de APP_URL y no del pedido: detrás del proxy HTTPS, Node ve la conexión interna
+ * (`http://`), y Mercado Pago terminaría notificando y volviendo a una dirección sin cifrar.
+ * El origen del pedido queda solo como respaldo para desarrollo.
+ */
+export function publicBaseUrl(request: Request): string {
+  const configured = process.env.APP_URL?.trim().replace(/\/+$/, "");
+  return configured || new URL(request.url).origin;
+}
+
 export async function readBody<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   let raw: unknown;
   try {

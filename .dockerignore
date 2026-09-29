@@ -12,3 +12,6 @@ coverage
 .env*.local
 # Ninguna base de datos entra a la imagen: vive en el volumen /data.
 *.db
+.env.production
+backups
+backups.tmp

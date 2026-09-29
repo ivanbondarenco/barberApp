@@ -1,0 +1,6 @@
+# Los scripts y la config que corren en el servidor Linux van siempre con saltos LF:
+# con CRLF (Windows) el shell del VPS no los puede ejecutar.
+*.sh text eol=lf
+deploy/Caddyfile text eol=lf
+docker-compose.yml text eol=lf
+Dockerfile text eol=lf

@@ -243,6 +243,8 @@ npm run test:e2e:ui     # modo interactivo de Playwright
 
 ## Publicar en producción
 
+**Guía paso a paso para un VPS (la que usamos en Hostinger): [`deploy/VPS.md`](deploy/VPS.md).** Usa `docker-compose.yml`: la app más Caddy, que saca y renueva solo el certificado HTTPS.
+
 Lo que hay que resolver una vez, antes de que un local cobre de verdad:
 
 1. **Hosting con disco persistente y una sola instancia.** La base es un archivo (`sql.js`), así que **no sirve Vercel ni ningún serverless**: cada deploy borraría los turnos. Sirve el `Dockerfile` con un volumen en `/data` (Railway, Fly.io, Render con disco, o un VPS). Una sola instancia: dos procesos escribiendo el mismo archivo se pisan.

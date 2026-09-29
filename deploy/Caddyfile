@@ -1,0 +1,7 @@
+# Caddy atiende el dominio, saca y renueva el certificado HTTPS solo, y le pasa todo a la app.
+# DOMAIN sale de .env.production (por ejemplo turnos.tudominio.com, sin https://).
+
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

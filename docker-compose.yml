@@ -1,0 +1,51 @@
+# Despliegue en un VPS: la app + Caddy, que saca y renueva solo el certificado HTTPS.
+#
+#   cp .env.production.example .env.production   # y completarlo
+#   docker compose up -d --build
+#
+# Guía completa: deploy/VPS.md
+
+services:
+  app:
+    build: .
+    image: barberapp:latest
+    restart: unless-stopped
+    # npm no reenvía las señales de parada: con init, un reinicio corta limpio.
+    init: true
+    env_file: .env.production
+    environment:
+      DATABASE_PATH: /data/ds-studio.db
+      BACKUP_DIR: /data/backups
+    volumes:
+      # La base vive acá. Es lo único que no se puede perder: nunca borres este volumen.
+      - barberapp-data:/data
+    # Sin puertos publicados: solo se llega a través de Caddy.
+    expose:
+      - "3000"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    env_file: .env.production
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificados: si se pierden, Caddy los vuelve a pedir (con límite de pedidos por semana).
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+volumes:
+  barberapp-data:
+  caddy-data:
+  caddy-config:

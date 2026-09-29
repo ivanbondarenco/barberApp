@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { productionConfig, testModeAllowed } from "@/server/config";
+import { publicBaseUrl } from "@/server/http";
 import { reportError, resetAlertsForTests } from "@/server/monitor";
 import { decryptSecret, encryptSecret, isEncrypted } from "@/server/secret-box";
 
@@ -141,5 +142,17 @@ describe("avisos de errores", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubEnv("ALERT_WEBHOOK_URL", "https://hooks.ejemplo.com/x");
     await expect(reportError("api", new Error("boom"))).resolves.toBeUndefined();
+  });
+});
+
+describe("dirección pública", () => {
+  it("los links de Mercado Pago salen de APP_URL, no de la conexión interna del proxy", () => {
+    vi.stubEnv("APP_URL", "https://turnos.ejemplo.com/");
+    expect(publicBaseUrl(new Request("http://app:3000/api/payments/checkout"))).toBe("https://turnos.ejemplo.com");
+  });
+
+  it("sin APP_URL (desarrollo) usa el origen del pedido", () => {
+    vi.stubEnv("APP_URL", "");
+    expect(publicBaseUrl(new Request("http://localhost:3001/api/payments/checkout"))).toBe("http://localhost:3001");
   });
 });

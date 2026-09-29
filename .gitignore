@@ -11,3 +11,8 @@ data/
 playwright-report/
 test-results/
 coverage/
+# Producción: las claves y los backups del servidor nunca van a git.
+.env
+.env.production
+/backups
+/backups.tmp
