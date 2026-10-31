@@ -1,6 +1,7 @@
 "use client";
 
 import { Search, Smartphone, UserRound } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SlotPicker } from "@/components/booking/SlotPicker";
 import { Field } from "@/components/ui/Field";
@@ -238,8 +239,11 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
 
         {activeServices.length === 0 && (
           <p className="rounded-2xl bg-error-container/50 px-4 py-3 text-[13px] text-ink">
-            Todavía no cargaste servicios. Creálos en <strong className="font-semibold">Catálogo › Servicios</strong>, con tu
-            precio y tu duración, y después podés agendar.
+            Todavía no cargaste servicios. Creálos en{" "}
+            <Link href="/admin/servicios?nuevo=servicio" onClick={onClose} className="font-semibold text-primary underline underline-offset-2">
+              Catálogo › Servicios
+            </Link>
+            , con tu precio y tu duración, y después podés agendar.
           </p>
         )}
 

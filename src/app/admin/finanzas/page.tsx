@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ChevronLeft, ChevronRight, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, ReceiptText, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { NAV, Page } from "@/components/motion/Page";
@@ -243,6 +243,15 @@ export default function FinanzasPage() {
           </ul>
         )}
       </Section>
+
+      <Link href="/admin/sueldos" transitionTypes={[...NAV.forward]} className="tap row card">
+        <ReceiptText size={19} className="text-primary" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-semibold">Sueldos y adelantos</span>
+          <span className="block text-[13px] text-secondary">Comisiones del equipo, liquidaciones y recibos</span>
+        </span>
+        <ChevronRight size={17} className="text-secondary" aria-hidden />
+      </Link>
     </Page>
   );
 }

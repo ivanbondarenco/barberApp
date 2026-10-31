@@ -21,8 +21,9 @@ import { testModeAllowed } from "./config";
 import { hashPassword, normalizeIdentifier } from "./crypto";
 import { getDb, LEGACY_SHOP_ID, persist, queryAll, queryOne, transaction } from "./db";
 import { notifyAppointment } from "./notify";
+import { pushAboutCommand } from "./push";
 
-type Collection = "clients" | "barbers" | "services" | "products" | "appointments" | "blocks";
+type Collection = "clients" | "barbers" | "services" | "products" | "appointments" | "blocks" | "advances" | "payouts";
 const TABLES: Record<Collection, string> = {
   clients: "clients",
   barbers: "barbers",
@@ -30,6 +31,8 @@ const TABLES: Record<Collection, string> = {
   products: "products",
   appointments: "appointments",
   blocks: "blocks",
+  advances: "advances",
+  payouts: "payouts",
 };
 const SETTINGS = ["depositSettings", "businessHours", "businessInfo"] as const;
 
@@ -100,6 +103,8 @@ function readState(db: Database, shopId: string): DomainState {
     products: rows(TABLES.products),
     appointments: rows(TABLES.appointments),
     blocks: rows(TABLES.blocks),
+    advances: rows(TABLES.advances),
+    payouts: rows(TABLES.payouts),
     depositSettings: setting("depositSettings") ?? { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
     businessHours: setting("businessHours") ?? DEFAULT_BUSINESS_HOURS,
     businessInfo: setting("businessInfo") ?? seedBusinessInfo,
@@ -187,6 +192,8 @@ function emptyState(): DomainState {
     products: [],
     appointments: [],
     blocks: [],
+    advances: [],
+    payouts: [],
     depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
@@ -202,6 +209,8 @@ function seedData(): DomainState {
     products: seedProducts,
     appointments: buildSeedAppointments(),
     blocks: buildSeedBlocks(),
+    advances: [],
+    payouts: [],
     depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
@@ -505,6 +514,7 @@ export async function executeCommand(actor: Actor, command: Command): Promise<{ 
   await persist();
   const state = readState(db, shopId);
   mailAboutAppointment(db, shopId, command, prev, state);
+  pushAboutCommand(shopId, command, actor, prev, state);
   return { state, version };
 }
 

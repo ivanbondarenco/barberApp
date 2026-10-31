@@ -2,7 +2,17 @@
 
 import type { AppointmentPatch, BookPayload, Command } from "@/lib/commands";
 import { uid } from "@/lib/format";
-import type { Barber, BusinessInfo, ClientProfile, DayHours, PaymentMethod, Product, Service, TimeBlock } from "@/lib/types";
+import type {
+  Barber,
+  BusinessInfo,
+  ClientProfile,
+  DayHours,
+  PaymentMethod,
+  PayoutMethod,
+  Product,
+  Service,
+  TimeBlock,
+} from "@/lib/types";
 import { useAppStore, type Result } from "./useAppStore";
 import { toast, undoToast } from "./useToast";
 
@@ -86,6 +96,27 @@ export const saveBarber = (barber: Barber, isNew: boolean) =>
   runWithFeedback({ type: "barber.upsert", barber }, isNew ? "Barbero agregado" : "Cambios guardados");
 
 export const deleteBarber = (id: string) => runWithFeedback({ type: "barber.delete", id }, "Barbero eliminado");
+
+// ───────── Sueldos ─────────
+export const createAdvance = (advance: { barberId: string; amount: number; date: string; note?: string }) =>
+  runWithFeedback({ type: "advance.create", advance: { ...advance, id: uid("adv") } }, "Adelanto registrado");
+
+export const deleteAdvance = (id: string) => runWithFeedback({ type: "advance.delete", id }, "Adelanto eliminado");
+
+/** Liquida el período y devuelve el id del recibo. */
+export async function createPayout(input: {
+  barberId: string;
+  from: string;
+  to: string;
+  method: PayoutMethod;
+}): Promise<Result & { id: string }> {
+  const id = uid("liq");
+  const result = await runWithFeedback({ type: "payout.create", id, ...input }, "Liquidación lista");
+  return { ...result, id };
+}
+
+export const deletePayout = (id: string) =>
+  runWithFeedback({ type: "payout.delete", id }, "Liquidación anulada. Los servicios y adelantos vuelven a pendientes.");
 
 export const saveClient = (client: ClientProfile, isNew: boolean) =>
   runWithFeedback({ type: "client.upsert", client }, isNew ? "Cliente creado" : "Cambios guardados");

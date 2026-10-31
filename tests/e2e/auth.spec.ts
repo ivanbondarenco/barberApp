@@ -7,22 +7,67 @@ test.beforeAll(resetData);
 const BRUNO = { name: "Bruno Díaz", email: "bruno.diaz@example.com", phone: "+54 9 11 2222 3333", password: "bruno-2026" };
 
 test.describe("Landing", () => {
-  test("sin sesión, la portada presenta la app y lleva a crear la barbería", async ({ page }) => {
+  test("sin sesión, la portada presenta la app y el alta se abre en un modal", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Una sola agenda");
     await expect(page.getByText("2 cortes", { exact: false }).first()).toBeVisible();
     await page.getByRole("link", { name: "Probar la demo gratis" }).first().click();
-    await page.waitForURL("**/auth/nueva-barberia");
+    const signup = page.getByRole("dialog", { name: "Registrar mi barbería" });
+    await expect(signup.getByLabel("Nombre de la barbería")).toBeVisible();
+    // Sigue en la portada: el modal no navega.
+    expect(new URL(page.url()).pathname).toBe("/");
+
+    // Los términos se abren encima del alta, sin perder lo que ya se escribió.
+    await signup.getByLabel("Nombre de la barbería").fill("Barbería del Modal");
+    await signup.getByRole("link", { name: "términos y condiciones" }).click();
+    const terms = page.getByRole("dialog", { name: "Términos y condiciones" });
+    await expect(terms.getByText("1 mes de prueba gratis")).toBeVisible();
+    await terms.getByRole("button", { name: "Entendido" }).click();
+    await expect(terms).toBeHidden();
+    await expect(signup.getByLabel("Nombre de la barbería")).toHaveValue("Barbería del Modal");
   });
 
-  test("el pie lleva a los términos y a la privacidad", async ({ page }) => {
+  test("el alta desde el modal crea la barbería y entra al panel", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "Empezar mi prueba gratis" }).click();
+    const signup = page.getByRole("dialog", { name: "Registrar mi barbería" });
+    await signup.getByLabel("Nombre de la barbería").fill("Barbería del Modal");
+    await signup.getByLabel("Dirección").fill("Av. Corrientes 1234");
+    await signup.getByLabel("Tu número de teléfono").fill("11 4444 5555");
+    await signup.getByLabel("Tu nombre").fill("Dueño del Modal");
+    await signup.getByLabel("Tu email").fill("modal@example.com");
+    await signup.getByLabel("Contraseña", { exact: true }).fill("modal-2026");
+    await signup.getByLabel("Repetir contraseña").fill("modal-2026");
+    await page.getByRole("button", { name: "Crear barbería" }).click();
+    await page.waitForURL("**/admin/agenda");
+  });
+
+  test("el alta no deja escribir letras en el teléfono ni números en el nombre", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "Probar la demo gratis" }).first().click();
+    const signup = page.getByRole("dialog", { name: "Registrar mi barbería" });
+    await signup.getByLabel("Tu número de teléfono").pressSequentially("11abc3096x9716");
+    await expect(signup.getByLabel("Tu número de teléfono")).toHaveValue("1130969716");
+    await signup.getByLabel("Tu nombre").pressSequentially("Iván2 Pérez");
+    await expect(signup.getByLabel("Tu nombre")).toHaveValue("Iván Pérez");
+    await signup.getByLabel("Dirección").fill("Corrientes");
+    await signup.getByLabel("Tu nombre").click();
+    await expect(signup.getByText("Incluí la altura")).toBeVisible();
+  });
+
+  test("el pie abre los términos y la privacidad en un modal", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("contentinfo").getByRole("link", { name: "Términos" }).click();
-    await expect(page.getByRole("heading", { name: "Términos y condiciones" })).toBeVisible();
-    await expect(page.getByText("1 mes de prueba gratis")).toBeVisible();
-    await page.goto("/");
+    await expect(page.getByRole("dialog", { name: "Términos y condiciones" })).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByRole("contentinfo").getByRole("link", { name: "Privacidad" }).click();
-    await expect(page.getByRole("heading", { name: "Política de privacidad" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Política de privacidad" })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/");
+  });
+
+  test("el link directo a los términos sigue siendo una página", async ({ page }) => {
+    await page.goto("/terminos");
+    await expect(page.getByRole("heading", { name: "Términos y condiciones" })).toBeVisible();
   });
 
   test("Ingresar lleva al formulario de ingreso", async ({ page }) => {
@@ -43,7 +88,7 @@ test.describe("Ingreso", () => {
     await page.getByRole("tab", { name: "Soy barbero" }).click();
     await expect(page.getByText("¿No creaste tu barbería?")).toBeVisible();
     await page.getByRole("link", { name: "Creala" }).click();
-    await page.waitForURL("**/auth/nueva-barberia");
+    await expect(page.getByRole("dialog", { name: "Registrar mi barbería" }).getByLabel("Nombre de la barbería")).toBeVisible();
   });
 
   test("recuerda la última solapa usada", async ({ page }) => {
@@ -86,14 +131,13 @@ test.describe("Ingreso", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Email o contraseña incorrectos" })).toBeVisible();
   });
 
-  test("bloquea el usuario tras 5 intentos fallidos", async ({ request }) => {
-    const identifier = "nadie@test.com";
-    for (let i = 0; i < 5; i++) {
-      const res = await request.post("/api/auth/login", { data: { role: "cliente", identifier, password: "equivocada" } });
+  test("varios intentos fallidos no bloquean el ingreso", async ({ request }) => {
+    for (let i = 0; i < 7; i++) {
+      const res = await request.post("/api/auth/login", { data: { role: "cliente", identifier: CLIENT.email, password: "equivocada" } });
       expect(res.status()).toBe(401);
     }
-    const locked = await request.post("/api/auth/login", { data: { role: "cliente", identifier, password: "equivocada" } });
-    expect(locked.status()).toBe(429);
+    const ok = await request.post("/api/auth/login", { data: { role: "cliente", identifier: CLIENT.email, password: CLIENT.password } });
+    expect(ok.status()).toBe(200);
   });
 
   test("mostrar y ocultar la contraseña", async ({ page }) => {

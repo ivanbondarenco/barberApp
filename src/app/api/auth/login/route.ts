@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { loginPasswordSchema } from "@/lib/password";
-import { clearFailures, clientShops, isLocked, registerFailure, startSession, visitorShop, type UserRow } from "@/server/auth";
+import { clientShops, startSession, visitorShop, type UserRow } from "@/server/auth";
 import { normalizeIdentifier, verifyPassword } from "@/server/crypto";
 import { queryOne } from "@/server/db";
 import { errorResponse, json, readBody } from "@/server/http";
@@ -21,8 +21,6 @@ export async function POST(request: Request) {
   try {
     const { role, identifier, password } = await readBody(request, schema);
     const key = normalizeIdentifier(identifier);
-    const lockKey = `${role}:${key}`;
-    if (isLocked(lockKey)) return json({ error: "Demasiados intentos. Esperá 10 minutos o recuperá tu contraseña." }, 429);
 
     const db = await ensureSeeded();
     const user =
@@ -31,10 +29,8 @@ export async function POST(request: Request) {
         : // Si una base vieja trae el mismo dato en dos barberías, entra a la que corresponde la contraseña.
           staffByIdentifier<UserRow>(db, key).find((u) => verifyPassword(password, u.password_hash));
     if (!user || !verifyPassword(password, user.password_hash)) {
-      registerFailure(lockKey);
       return json({ error: "Email o contraseña incorrectos." }, 401);
     }
-    clearFailures(lockKey);
 
     // El cliente arranca en la barbería del link por el que llegó, si es una de las suyas.
     let shopId: string | null = null;

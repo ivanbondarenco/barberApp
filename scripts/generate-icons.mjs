@@ -1,38 +1,40 @@
-// Genera los íconos PWA (PNG) a partir de un SVG con la marca de BarberApp.
-import { mkdir } from "node:fs/promises";
+// Genera los íconos PWA (PNG) a partir del ícono de la app: public/icons/app-icon.svg.
+// El favicon (public/favicon.svg) se sirve tal cual, en SVG.
+import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 const OUT = new URL("../public/icons/", import.meta.url);
+const SOURCE = await readFile(new URL("app-icon.svg", OUT));
+/** Fondo del ícono: rellena las esquinas donde el sistema no las recorta. */
+const BACKGROUND = "#0A1020";
 
-/** padding: proporción de zona segura (maskable necesita ~20%). */
-function svg(size, padding) {
-  const inner = size * (1 - padding * 2);
-  const offset = size * padding;
-  const s = inner / 120;
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <rect width="${size}" height="${size}" rx="${padding ? 0 : size * 0.22}" fill="#1D4ED8"/>
-  <g transform="translate(${offset} ${offset}) scale(${s})">
-    <text x="60" y="76" text-anchor="middle" font-size="54" fill="#FFFFFF"
-      font-family="Georgia, 'Times New Roman', serif" font-weight="700" letter-spacing="-2">BA</text>
-    <line x1="28" y1="88" x2="92" y2="88" stroke="#DCE1FF" stroke-width="2" stroke-opacity="0.7"/>
-    <text x="60" y="102" text-anchor="middle" font-size="8.5" fill="#DCE1FF"
-      font-family="Arial, Helvetica, sans-serif" font-weight="700" letter-spacing="1.6">BARBERAPP</text>
-  </g>
-</svg>`;
+/**
+ * - `rounded`: el ícono tal cual, con sus esquinas redondeadas y transparentes (Android "any").
+ * - `fullBleed`: sobre un cuadrado lleno del color de fondo. iOS y las máscaras de Android
+ *   recortan la forma por su cuenta; con esquinas transparentes quedarían bordes negros.
+ *   `scale` achica el dibujo para que entre en la zona segura de un ícono maskable (~80%).
+ */
+async function render(size, { fullBleed = false, scale = 1 } = {}) {
+  const inner = Math.round(size * scale);
+  const icon = await sharp(SOURCE, { density: 384 }).resize(inner, inner).png().toBuffer();
+  if (!fullBleed) return sharp(icon);
+  return sharp({ create: { width: size, height: size, channels: 4, background: BACKGROUND } }).composite([
+    { input: icon, gravity: "center" },
+  ]);
 }
 
 await mkdir(OUT, { recursive: true });
 
 const targets = [
-  { file: "icon-192.png", size: 192, padding: 0.04 },
-  { file: "icon-512.png", size: 512, padding: 0.04 },
-  { file: "maskable-512.png", size: 512, padding: 0.16 },
-  { file: "apple-touch-icon.png", size: 180, padding: 0.08 },
+  { file: "icon-192.png", size: 192 },
+  { file: "icon-512.png", size: 512 },
+  { file: "maskable-512.png", size: 512, fullBleed: true, scale: 0.8 },
+  { file: "apple-touch-icon.png", size: 180, fullBleed: true },
 ];
 
-for (const { file, size, padding } of targets) {
-  await sharp(Buffer.from(svg(size, padding))).png().toFile(fileURLToPath(new URL(file, OUT)));
+for (const { file, size, ...options } of targets) {
+  const image = await render(size, options);
+  await image.png().toFile(fileURLToPath(new URL(file, OUT)));
   console.log(`✓ public/icons/${file}`);
 }

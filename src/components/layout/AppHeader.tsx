@@ -3,11 +3,15 @@
 import {
   ArrowLeft,
   BellRing,
+  ChevronDown,
   ChevronRight,
   CircleHelp,
   CloudOff,
   Contact,
+  ExternalLink,
   FileText,
+  MessageCircle,
+  ReceiptText,
   History,
   LogOut,
   type LucideIcon,
@@ -24,10 +28,12 @@ import { useState, type ReactNode } from "react";
 import { NAV } from "@/components/motion/Page";
 import { CLIENT_SHOPS_PATH } from "@/components/layout/RoleGuard";
 import { Sheet } from "@/components/ui/Sheet";
-import { initials } from "@/lib/format";
+import { initials, whatsappLink } from "@/lib/format";
+import { SUPPORT_WHATSAPP } from "@/lib/plan";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 import { BrandMark } from "./Logo";
+import { NotificationBell } from "./NotificationBell";
 
 interface AppHeaderProps {
   title: string;
@@ -54,6 +60,7 @@ const OWNER_LINKS: MenuLink[] = [
   { href: "/admin/clientes", label: "Clientes", icon: Contact },
   { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
   { href: "/admin/equipo", label: "Equipo", icon: Users },
+  { href: "/admin/sueldos", label: "Sueldos y adelantos", icon: ReceiptText },
   { href: "/admin/configuracion", label: "Configuración", icon: Settings },
 ];
 
@@ -61,6 +68,7 @@ const OWNER_LINKS: MenuLink[] = [
 const BARBER_LINKS: MenuLink[] = [
   { href: "/admin/clientes", label: "Clientes", icon: Contact },
   { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
+  { href: "/admin/sueldos", label: "Mis ganancias", icon: ReceiptText },
   { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
 
@@ -72,6 +80,8 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const links = session?.role === "admin" ? OWNER_LINKS : session?.role === "barbero" ? BARBER_LINKS : CLIENT_LINKS;
+  const isStaffSession = session?.role === "admin" || session?.role === "barbero";
+  const roleLabel = session?.role === "admin" ? "Dueño del local" : session?.role === "barbero" ? "Barbero" : "Cliente";
 
   return (
     <header
@@ -99,15 +109,23 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
         )}
         {right}
         {session?.role === "cliente" && session.shop && <ShopSwitcher />}
+        {isStaffSession && <NotificationBell />}
+        {/* Se ve como botón: avatar, nombre y flecha. En el celular, avatar y flecha. */}
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
           aria-label="Abrir menú de cuenta"
-          className="tap mr-1 flex h-11 w-11 items-center justify-center rounded-full"
+          aria-haspopup="dialog"
+          className="tap mr-1 flex min-h-11 items-center gap-2 rounded-full border border-surface-high bg-surface-lowest py-1 pl-1 pr-2.5 shadow-xs transition-colors hover:border-primary-fixed hover:bg-surface-low"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-fixed text-xs font-bold text-primary">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-on-primary">
             {initials(session?.name ?? "DS")}
           </span>
+          <span className="hidden min-w-0 max-w-40 text-left leading-tight lg:block">
+            <span className="block truncate text-sm font-semibold">{session?.name ?? "Mi cuenta"}</span>
+            <span className="block text-[11px] text-secondary">{roleLabel}</span>
+          </span>
+          <ChevronDown size={16} className="shrink-0 text-secondary" aria-hidden />
         </button>
       </div>
 
@@ -134,6 +152,25 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
               </li>
             ))}
           </ul>
+          {(session?.role === "admin" || session?.role === "barbero") && (
+            <a
+              href={whatsappLink(
+                SUPPORT_WHATSAPP,
+                `Hola, soy ${session.name}${session.shop ? ` de ${session.shop.name}` : ""}. Necesito ayuda con BarberApp.`,
+              )}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setMenuOpen(false)}
+              className="row rounded-2xl bg-mint font-semibold text-mint-ink"
+            >
+              <MessageCircle size={19} aria-hidden />
+              <span className="flex-1">
+                Soporte por WhatsApp
+                <span className="block text-xs font-medium">Escribinos ante cualquier duda</span>
+              </span>
+              <ExternalLink size={16} aria-hidden />
+            </a>
+          )}
           <button
             type="button"
             className="tap btn-destructive"

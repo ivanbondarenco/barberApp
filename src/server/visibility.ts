@@ -1,7 +1,7 @@
 import "server-only";
 import type { Actor, DomainState } from "@/lib/commands";
 import { todayISO } from "@/lib/dates";
-import type { Appointment } from "@/lib/types";
+import type { Appointment, Barber } from "@/lib/types";
 
 /**
  * Ocupa el horario sin revelar de quién es el turno.
@@ -28,10 +28,17 @@ function anonymous(a: Appointment): Appointment {
   };
 }
 
+/** Lo que cobra cada barbero es entre él y el dueño. */
+function withoutCommission(barber: Barber): Barber {
+  const { commission: _commission, ...rest } = barber;
+  return rest;
+}
+
 /**
  * Datos que puede ver cada rol.
  * - `admin`: todo.
- * - `barbero`: su agenda completa; los turnos de otros sillones, anonimizados.
+ * - `barbero`: su agenda completa; los turnos de otros sillones, anonimizados. De sueldos, solo
+ *   lo suyo: su comisión, sus adelantos y sus recibos.
  * - `cliente`: lo propio y la disponibilidad anónima.
  * - sin sesión: catálogo público.
  */
@@ -44,6 +51,9 @@ export function stateForActor(state: DomainState, actor: Actor | null): DomainSt
     return {
       ...state,
       appointments: state.appointments.map((a) => (a.barberId === actor.barberId ? a : anonymous(a))),
+      barbers: state.barbers.map((b) => (b.id === actor.barberId ? b : withoutCommission(b))),
+      advances: state.advances.filter((x) => x.barberId === actor.barberId),
+      payouts: state.payouts.filter((p) => p.barberId === actor.barberId),
     };
   }
 
@@ -54,10 +64,12 @@ export function stateForActor(state: DomainState, actor: Actor | null): DomainSt
     // Ni el celular del barbero ni su usuario de acceso salen del staff.
     barbers: state.barbers
       .filter((b) => b.active)
-      .map(({ phone: _phone, accountIdentifier: _ident, ...b }) => b),
+      .map(({ phone: _phone, accountIdentifier: _ident, commission: _commission, ...b }) => b),
     products: state.products.filter((p) => p.active),
     appointments: [],
     blocks: state.blocks.filter((b) => b.date >= today).map((b) => ({ ...b, reason: "" })),
+    advances: [],
+    payouts: [],
   };
   if (!actor || actor.role === "sistema") return publicPart;
 

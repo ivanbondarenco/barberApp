@@ -42,6 +42,8 @@ export function seedState(): DomainState {
     products: seedProducts,
     appointments: buildSeedAppointments(),
     blocks: buildSeedBlocks(),
+    advances: [],
+    payouts: [],
     depositSettings: { allowCash: true, rate: 0.5 },
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,

@@ -27,6 +27,13 @@
   --color-surface-high: #dce9ff;
   --color-surface-highest: #d3e4fe;
 
+  /* Medianoche: bandas oscuras de la landing (encabezado, portada, precio, cierre y pie). */
+  --color-night: #0a1020;
+  --color-night-soft: #121a2e;
+  --color-night-line: #1e2842;
+  --color-night-muted: #a3aec7;
+  --color-night-accent: #8faeff;
+
   --color-mint: #e3f7ee;
   --color-mint-ink: #0f7a55;
 

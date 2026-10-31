@@ -3,7 +3,7 @@
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { Package, Scissors, Star } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
 import { ProductFormSheet } from "@/components/admin/ProductFormSheet";
 import { ServiceFormSheet } from "@/components/admin/ServiceFormSheet";
@@ -31,6 +31,14 @@ export default function CatalogoPage() {
   const [tab, setTab] = useState<Tab>("servicios");
   const [serviceSheet, setServiceSheet] = useState<{ open: boolean; service?: Service }>({ open: false });
   const [productSheet, setProductSheet] = useState<{ open: boolean; product?: Product }>({ open: false });
+
+  // Desde otras pantallas (?nuevo=servicio) se llega directo al alta.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("nuevo") !== "servicio") return;
+    setServiceSheet({ open: true });
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const ticket = useMemo(() => {
     const done = appointments.filter((a) => a.status === "completado");

@@ -61,6 +61,8 @@ const emptyDomain: DomainState = {
   products: [],
   appointments: [],
   blocks: [],
+  advances: [],
+  payouts: [],
   depositSettings: { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
   businessHours: DEFAULT_BUSINESS_HOURS,
   businessInfo: seedBusinessInfo,

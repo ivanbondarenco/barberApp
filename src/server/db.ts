@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS appointments (
 );
 CREATE INDEX IF NOT EXISTS appointments_date ON appointments (shop_id, date, barber_id);
 CREATE INDEX IF NOT EXISTS appointments_client ON appointments (shop_id, client_id);
+-- Celulares del staff que activaron los avisos push. Una fila por navegador suscripto.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  shop_id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+-- Sueldos: adelantos a los barberos y liquidaciones (recibos). Mismo formato que el resto.
+CREATE TABLE IF NOT EXISTS advances (shop_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (shop_id, id));
+CREATE TABLE IF NOT EXISTS payouts (shop_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (shop_id, id));
 -- Cuentas. El staff (dueño y barberos) trabaja en una sola barbería: la de shop_id.
 -- El cliente tiene una única cuenta (shop_id NULL) y se suma a las barberías por memberships.
 CREATE TABLE IF NOT EXISTS users (

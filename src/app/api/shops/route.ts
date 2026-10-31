@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addressSchema, emailSchema, personNameSchema, shopNameSchema } from "@/lib/validation";
 import { rememberShop, startSession } from "@/server/auth";
 import { passwordSchema } from "@/lib/password";
 import { arPhoneSchema } from "@/lib/phone";
@@ -9,11 +10,11 @@ import { createShop, listShops } from "@/server/repository";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  name: z.string().trim().min(3, "Ingresá el nombre de la barbería"),
-  ownerName: z.string().trim().min(3, "Ingresá tu nombre"),
-  identifier: z.email("Ingresá un email válido"),
+  name: shopNameSchema,
+  ownerName: personNameSchema,
+  identifier: emailSchema,
   password: passwordSchema,
-  address: z.string().trim().min(3, "Ingresá la dirección del local"),
+  address: addressSchema,
   whatsapp: arPhoneSchema,
   neighborhood: z.string().trim().optional(),
   email: z.union([z.literal(""), z.email("Email inválido")]).optional(),
