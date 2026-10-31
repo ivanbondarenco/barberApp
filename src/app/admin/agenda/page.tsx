@@ -13,10 +13,12 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Fab } from "@/components/ui/Fab";
 import { EmptyState } from "@/components/ui/States";
 import { MonthCalendar } from "@/components/ui/MonthCalendar";
+import { SetupChecklist } from "@/components/layout/SetupChecklist";
 import { cn } from "@/lib/cn";
 import { dateTime, longDate, timeToMinutes, todayISO } from "@/lib/dates";
 import { money } from "@/lib/format";
 import { ease, listItem } from "@/lib/motion";
+import { setupTasks } from "@/lib/notifications";
 import { appointmentTotals } from "@/lib/pricing";
 import { firstOpenDay, openingHours, shiftOf } from "@/lib/schedule";
 import type { Appointment, TimeBlock } from "@/lib/types";
@@ -49,6 +51,15 @@ export default function AgendaPage() {
     () => (isOwner ? appointments : appointments.filter((a) => a.barberId === session?.barberId)),
     [appointments, isOwner, session?.barberId],
   );
+  const integrations = useAppStore((s) => s.integrations);
+  const services = useAppStore((s) => s.services);
+  const synced = useAppStore((s) => s.synced);
+  // Lo que le falta configurar al dueño queda a la vista apenas entra, hasta resolverlo.
+  const setup = useMemo(
+    () => (synced && isOwner ? setupTasks({ integrations, services }, "admin") : []),
+    [synced, isOwner, integrations, services],
+  );
+
   /** Turnos por día del mes: es el punto que marca cada casilla del calendario. */
   const countByDay = useMemo(() => {
     const map = new Map<string, number>();
@@ -87,6 +98,11 @@ export default function AgendaPage() {
 
   return (
     <Page className="pb-28">
+      {setup.length > 0 && (
+        <div className="px-5 pb-2 pt-1">
+          <SetupChecklist tasks={setup} shopName={session?.shop?.name} />
+        </div>
+      )}
       {/* Mes completo: de un vistazo se ve qué días tienen turnos. */}
       <div className="px-5 pt-1">
         <MonthCalendar

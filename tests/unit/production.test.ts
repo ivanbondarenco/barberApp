@@ -61,6 +61,8 @@ describe("configuración de producción", () => {
     SMTP_HOST: "smtp.ejemplo.com",
     ALERT_WEBHOOK_URL: "https://hooks.ejemplo.com/x",
     DATABASE_PATH: "/data/ds-studio.db",
+    VAPID_PUBLIC_KEY: "BPublica",
+    VAPID_PRIVATE_KEY: "privada",
   };
 
   it("una configuración completa arranca sin errores ni avisos", () => {

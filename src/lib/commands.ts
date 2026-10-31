@@ -15,8 +15,10 @@ import {
   noShowCount,
   splitDeposit,
 } from "./pricing";
+import { isValidCommission, payrollPreview } from "./payroll";
 import { buildSlots, cashDepositDeadline, CLIENT_BOOKING_DAYS, withinClientWindow } from "./schedule";
 import type {
+  Advance,
   Appointment,
   Barber,
   BusinessHours,
@@ -26,6 +28,8 @@ import type {
   DepositSettings,
   PaymentMethod,
   IntegrationSettings,
+  Payout,
+  PayoutMethod,
   Product,
   Service,
   TimeBlock,
@@ -38,6 +42,10 @@ export interface DomainState {
   products: Product[];
   appointments: Appointment[];
   blocks: TimeBlock[];
+  /** Adelantos a los barberos. Solo los ve el dueño (y cada barbero, los suyos). */
+  advances: Advance[];
+  /** Liquidaciones de sueldos ya hechas: los recibos. */
+  payouts: Payout[];
   depositSettings: DepositSettings;
   businessHours: BusinessHours;
   businessInfo: BusinessInfo;
@@ -130,6 +138,10 @@ export type Command =
   | { type: "client.delete"; id: string }
   | { type: "block.create"; block: TimeBlock }
   | { type: "block.delete"; id: string }
+  | { type: "advance.create"; advance: Omit<Advance, "payoutId" | "createdAt"> }
+  | { type: "advance.delete"; id: string }
+  | { type: "payout.create"; id: string; barberId: string; from: string; to: string; method: PayoutMethod }
+  | { type: "payout.delete"; id: string }
   | { type: "settings.deposit"; allowCash?: boolean; rate?: number }
   | { type: "settings.hours"; dayIndex: number; patch: Partial<DayHours> }
   | { type: "settings.info"; patch: Partial<BusinessInfo> }
@@ -166,6 +178,10 @@ const OWNER_COMMANDS = new Set<Command["type"]>([
   "settings.deposit",
   "settings.hours",
   "settings.info",
+  "advance.create",
+  "advance.delete",
+  "payout.create",
+  "payout.delete",
   "demo.reset",
 ]);
 
@@ -663,6 +679,8 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       if (b.name.trim().length < 3) fail("Ingresá el nombre del barbero");
       if (!Number.isInteger(b.chair) || b.chair < 1) fail("Número de sillón inválido");
       if (state.barbers.some((x) => x.chair === b.chair && x.id !== b.id)) fail(`El sillón #${b.chair} ya está asignado`);
+      if (b.commission && !isValidCommission(b.commission))
+        fail(b.commission.kind === "percent" ? "La comisión tiene que estar entre 0% y 100%" : "Monto de comisión inválido");
       return { ...state, barbers: replace(state.barbers, { ...b, name: b.name.trim(), initials: initials(b.name) }) };
     }
 
@@ -725,6 +743,80 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       const block = state.blocks.find((b) => b.id === command.id);
       if (block) assertOwnChair(actor, block.barberId);
       return { ...state, blocks: state.blocks.filter((b) => b.id !== command.id) };
+    }
+
+    case "advance.create": {
+      const x = command.advance;
+      if (state.advances.some((a) => a.id === x.id)) fail("Adelanto duplicado", 409);
+      state.barbers.find((b) => b.id === x.barberId) ?? fail("El barbero no existe", 404);
+      if (!Number.isFinite(x.amount) || x.amount <= 0) fail("Ingresá el monto del adelanto");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(x.date)) fail("Fecha inválida");
+      const advance: Advance = {
+        id: x.id,
+        barberId: x.barberId,
+        amount: Math.round(x.amount),
+        date: x.date,
+        note: cleanText(x.note, 120),
+        createdAt: stamp,
+      };
+      return { ...state, advances: [...state.advances, advance] };
+    }
+
+    case "advance.delete": {
+      const advance = state.advances.find((a) => a.id === command.id) ?? fail("El adelanto no existe", 404);
+      if (advance.payoutId) fail("Ya se descontó en una liquidación. Anulá esa liquidación primero.");
+      return { ...state, advances: state.advances.filter((a) => a.id !== command.id) };
+    }
+
+    case "payout.create": {
+      if (state.payouts.some((p) => p.id === command.id)) fail("Liquidación duplicada", 409);
+      const barber = state.barbers.find((b) => b.id === command.barberId) ?? fail("El barbero no existe", 404);
+      if (command.from > command.to) fail("El período está al revés");
+      if (command.method !== "efectivo" && command.method !== "transferencia") fail("Medio de pago inválido");
+      // Se calcula acá, con el estado real: el recibo nunca sale de números que mandó el navegador.
+      const preview = payrollPreview({
+        barberId: barber.id,
+        commission: barber.commission,
+        from: command.from,
+        to: command.to,
+        appointments: state.appointments,
+        advances: state.advances,
+        payouts: state.payouts,
+      });
+      if (!preview.items.length && !preview.advances.length) fail("No hay servicios ni adelantos para liquidar en ese período");
+      const payout: Payout = {
+        id: command.id,
+        number: state.payouts.reduce((max, p) => Math.max(max, p.number), 0) + 1,
+        barberId: barber.id,
+        barberName: barber.name,
+        from: command.from,
+        to: command.to,
+        commission: barber.commission ?? { kind: "percent", value: 0 },
+        items: preview.items,
+        gross: preview.gross,
+        earned: preview.earned,
+        advances: preview.advances.map(({ id, date, amount, note }) => ({ id, date, amount, note })),
+        advancesTotal: preview.advancesTotal,
+        net: preview.net,
+        method: command.method,
+        createdAt: stamp,
+      };
+      const used = new Set(payout.advances.map((a) => a.id));
+      return {
+        ...state,
+        payouts: [...state.payouts, payout],
+        advances: state.advances.map((a) => (used.has(a.id) ? { ...a, payoutId: payout.id } : a)),
+      };
+    }
+
+    case "payout.delete": {
+      // Anular devuelve los servicios y los adelantos a pendientes, para volver a liquidarlos.
+      if (!state.payouts.some((p) => p.id === command.id)) fail("La liquidación no existe", 404);
+      return {
+        ...state,
+        payouts: state.payouts.filter((p) => p.id !== command.id),
+        advances: state.advances.map((a) => (a.payoutId === command.id ? { ...a, payoutId: undefined } : a)),
+      };
     }
 
     case "settings.deposit": {

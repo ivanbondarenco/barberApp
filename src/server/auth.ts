@@ -181,22 +181,3 @@ export async function endSession(): Promise<void> {
   store.delete(SESSION_COOKIE);
 }
 
-/** Límite simple de intentos fallidos por identificador (en memoria). */
-const attempts = new Map<string, { count: number; until: number }>();
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 10 * 60_000;
-
-export function isLocked(key: string): boolean {
-  const entry = attempts.get(key);
-  return !!entry && entry.count >= MAX_ATTEMPTS && entry.until > Date.now();
-}
-
-export function registerFailure(key: string): void {
-  const entry = attempts.get(key);
-  if (!entry || entry.until < Date.now()) attempts.set(key, { count: 1, until: Date.now() + WINDOW_MS });
-  else entry.count += 1;
-}
-
-export function clearFailures(key: string): void {
-  attempts.delete(key);
-}

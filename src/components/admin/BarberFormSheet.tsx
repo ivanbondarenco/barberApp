@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, Trash2 } from "lucide-react";
+import { KeyRound, Percent, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
+import { Segmented } from "@/components/ui/Segmented";
 import { Sheet } from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { initials, uid } from "@/lib/format";
@@ -26,6 +27,18 @@ const schema = z.object({
   accountIdentifier: z.string().trim(),
   /** Obligatorio solo al darle acceso por primera vez. */
   accountPassword: z.string().trim(),
+  commissionKind: z.enum(["none", "percent", "fixed"]),
+  commissionValue: z.string().trim(),
+}).superRefine((v, ctx) => {
+  if (v.commissionKind === "none") return;
+  const n = Number(v.commissionValue.replace(",", "."));
+  const ok = v.commissionValue !== "" && Number.isFinite(n) && n >= 0 && (v.commissionKind === "fixed" || n <= 100);
+  if (!ok)
+    ctx.addIssue({
+      code: "custom",
+      path: ["commissionValue"],
+      message: v.commissionKind === "percent" ? "Entre 0 y 100" : "Ingresá el monto",
+    });
 });
 type Values = z.infer<typeof schema>;
 
@@ -52,10 +65,13 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
       active: barber?.active ?? true,
       accountIdentifier: barber?.accountIdentifier ?? "",
       accountPassword: "",
+      commissionKind: barber?.commission?.kind ?? "none",
+      commissionValue: barber?.commission ? String(barber.commission.value) : "",
     });
   }, [open, barber]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = useWatch({ control, name: "active" });
+  const commissionKind = useWatch({ control, name: "commissionKind" });
 
   const onSubmit = async (v: Values) => {
     const id = barber?.id ?? uid("b");
@@ -68,6 +84,10 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
         phone: v.phone || undefined,
         initials: initials(v.name),
         active: v.active,
+        commission:
+          v.commissionKind === "none"
+            ? undefined
+            : { kind: v.commissionKind, value: Number(v.commissionValue.replace(",", ".")) },
       },
       isNew,
     );
@@ -126,6 +146,45 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
             </span>
             <Switch checked={!!active} onChange={(v) => setValue("active", v)} label="Recibe reservas" />
           </label>
+          <fieldset className="mt-1 flex flex-col gap-3 rounded-2xl bg-surface-low p-3">
+            <legend className="sr-only">Comisión</legend>
+            <p className="flex items-center gap-1.5 text-sm font-medium">
+              <Percent size={15} className="text-primary" aria-hidden /> Comisión
+            </p>
+            <p className="-mt-1 text-xs text-secondary">
+              Lo que cobra por cada servicio que termina. Con esto se arma su liquidación en Sueldos.
+            </p>
+            <Segmented
+              label="Tipo de comisión"
+              className="bg-surface-lowest"
+              value={commissionKind ?? "none"}
+              onChange={(v) => setValue("commissionKind", v, { shouldValidate: true })}
+              options={[
+                { value: "none", label: "Sin comisión" },
+                { value: "percent", label: "Porcentaje" },
+                { value: "fixed", label: "Monto fijo" },
+              ]}
+            />
+            {commissionKind !== "none" && (
+              <Field
+                label={commissionKind === "percent" ? "Porcentaje del servicio" : "Monto por servicio"}
+                htmlFor="bf-commission"
+                error={errors.commissionValue?.message}
+              >
+                <div className="field flex items-center gap-2 bg-surface-lowest focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                  {commissionKind === "fixed" && <span className="text-secondary">$</span>}
+                  <input
+                    id="bf-commission"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 bg-transparent outline-none"
+                    placeholder={commissionKind === "percent" ? "50" : "5000"}
+                    {...register("commissionValue")}
+                  />
+                  {commissionKind === "percent" && <span className="text-secondary">%</span>}
+                </div>
+              </Field>
+            )}
+          </fieldset>
           <fieldset className="mt-1 flex flex-col gap-3 rounded-2xl bg-surface-low p-3">
             <legend className="sr-only">Acceso a la app</legend>
             <p className="flex items-center gap-1.5 text-sm font-medium">

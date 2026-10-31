@@ -4,7 +4,7 @@
  * - Assets estáticos de Next (/_next/static): cache-first (inmutables).
  * - Resto GET same-origin: stale-while-revalidate.
  */
-const VERSION = "ds-studio-v3";
+const VERSION = "ds-studio-v6";
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGES_CACHE = `${VERSION}-pages`;
 // El manifiesto NO se precachea: se arma por pedido según la barbería elegida.
@@ -78,20 +78,31 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-/* Listo para notificaciones push (recordatorio de turno / seña pendiente). */
+/* Avisos push al staff: turno nuevo, cancelado o reprogramado (ver src/server/push.ts). */
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {};
   event.waitUntil(
-    self.registration.showNotification(data.title || "D.S Studio", {
-      body: data.body || "Tenés novedades sobre tu turno.",
+    self.registration.showNotification(data.title || "BarberApp", {
+      body: data.body || "Tenés novedades en tu agenda.",
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
-      data: { url: data.url || "/" },
+      // Un aviso nuevo del mismo turno reemplaza al anterior en vez de apilarse.
+      tag: data.tag,
+      renotify: !!data.tag,
+      data: { url: data.url || "/admin/agenda" },
     }),
   );
 });
 
+/* Al tocar el aviso: si la app ya está abierta, la trae al frente en esa pantalla. */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(self.clients.openWindow(event.notification.data?.url || "/"));
+  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => w.url.startsWith(self.location.origin));
+      if (open) return open.navigate(url).then((w) => (w || open).focus());
+      return self.clients.openWindow(url);
+    }),
+  );
 });

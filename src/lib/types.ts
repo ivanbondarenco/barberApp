@@ -72,6 +72,71 @@ export interface Barber {
   hasAccount?: boolean;
   /** Usuario con el que entra (email o celular), informado por el servidor. */
   accountIdentifier?: string;
+  /** Lo que cobra por cada servicio que termina. Sin definir: no se le liquida comisión. */
+  commission?: Commission;
+}
+
+/**
+ * Comisión del barbero sobre cada servicio terminado.
+ * - `percent`: porcentaje del precio del servicio (0 a 100).
+ * - `fixed`: monto fijo en pesos por servicio.
+ * Los productos de la tienda no comisionan: son del local.
+ */
+export interface Commission {
+  kind: "percent" | "fixed";
+  value: number;
+}
+
+/** Plata que el local le adelanta a un barbero y se descuenta en su próxima liquidación. */
+export interface Advance {
+  id: string;
+  barberId: string;
+  amount: number;
+  /** YYYY-MM-DD */
+  date: string;
+  note?: string;
+  /** Liquidación en la que se descontó. Sin definir: sigue pendiente. */
+  payoutId?: string;
+  createdAt: string;
+}
+
+/** Medios con los que el local le paga al barbero. */
+export type PayoutMethod = "efectivo" | "transferencia";
+
+/**
+ * Liquidación de un barbero por un período: es el recibo. Se guarda congelada (servicios,
+ * comisión y adelantos tal como estaban al liquidar) para que el recibo no cambie después.
+ */
+export interface Payout {
+  id: string;
+  /** Número correlativo por barbería, para el recibo. */
+  number: number;
+  barberId: string;
+  barberName: string;
+  /** YYYY-MM-DD, inclusive. */
+  from: string;
+  to: string;
+  commission: Commission;
+  /** Servicios terminados que entraron en la liquidación. */
+  items: PayoutItem[];
+  /** Suma de los precios de esos servicios. */
+  gross: number;
+  /** Lo que le corresponde por comisión. */
+  earned: number;
+  advances: { id: string; date: string; amount: number; note?: string }[];
+  advancesTotal: number;
+  /** A cobrar: comisión menos adelantos. Puede ser negativo si adelantó de más. */
+  net: number;
+  method: PayoutMethod;
+  createdAt: string;
+}
+
+export interface PayoutItem {
+  appointmentId: string;
+  date: string;
+  serviceName: string;
+  price: number;
+  amount: number;
 }
 
 export type ServiceCategory = "corte" | "barba" | "combo" | "tratamiento";

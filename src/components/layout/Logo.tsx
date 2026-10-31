@@ -7,46 +7,23 @@ import { cn } from "@/lib/cn";
  */
 export function LogoSeal({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 120 120" className={className} role="img" aria-label="BarberApp">
-      <circle cx="60" cy="60" r="60" fill="#101C36" />
-      <circle cx="60" cy="60" r="52" fill="none" stroke="#DCE1FF" strokeOpacity="0.25" strokeWidth="1" />
-      <text
-        x="60"
-        y="32"
-        textAnchor="middle"
-        fontSize="7"
-        letterSpacing="2"
-        fill="#DCE1FF"
-        fontFamily="ui-sans-serif, system-ui"
-        fontWeight="700"
-      >
-        TURNOS
-      </text>
-      <text
-        x="60"
-        y="74"
-        textAnchor="middle"
-        fontSize="38"
-        fill="#FFFFFF"
-        fontFamily="Georgia, 'Times New Roman', serif"
-        fontWeight="600"
-        letterSpacing="-1"
-      >
-        BA
-      </text>
-      <line x1="30" y1="84" x2="90" y2="84" stroke="#DCE1FF" strokeOpacity="0.5" strokeWidth="0.8" />
-      <text
-        x="60"
-        y="95"
-        textAnchor="middle"
-        fontSize="7.5"
-        letterSpacing="1.6"
-        fill="#DCE1FF"
-        fontFamily="ui-sans-serif, system-ui"
-        fontWeight="600"
-      >
-        BARBERAPP
-      </text>
+    <svg viewBox="0 0 512 512" className={className} role="img" aria-label="BarberApp">
+      <rect width="512" height="512" rx="108" fill="#0A1020" />
+      <g fill="none" stroke="#8FAEFF" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M131 347C121 340 116 331 116 319V190C116 174 128 161 144 161H368C384 161 396 174 396 190V319C396 331 391 340 381 347" strokeWidth="25" />
+        <path d="M184 116V175M328 116V175" strokeWidth="31" />
+      </g>
+      <path d="M225 216L251 241L290 201" fill="none" stroke="#6EE7B7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="23" />
+      <g fill="#8FAEFF">
+        <path d="M164 217Q156 208 158 224Q168 267 225 322L245 300Z" />
+        <path d="M348 217Q356 208 354 224Q344 267 287 322L267 300Z" />
+      </g>
+      <g fill="none" stroke="#8FAEFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="24">
+        <path d="M266 303L224 349M246 303L288 349" />
+        <circle cx="196" cy="379" r="43" />
+        <circle cx="316" cy="379" r="43" />
+      </g>
+      <circle cx="256" cy="303" r="13" fill="#0A1020" />
     </svg>
   );
 }

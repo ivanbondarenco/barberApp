@@ -3,7 +3,18 @@ import { expectAccessible, expectNoHorizontalOverflow, loginAsAdmin, loginAsClie
 
 test.beforeAll(resetData);
 
-const PUBLIC_PAGES = ["/auth/login", "/auth/registro", "/auth/recuperar", "/auth/nueva-barberia", "/politicas", "/ayuda", "/offline"];
+const PUBLIC_PAGES = [
+  "/",
+  "/auth/login",
+  "/auth/registro",
+  "/auth/recuperar",
+  "/auth/nueva-barberia",
+  "/politicas",
+  "/terminos",
+  "/privacidad",
+  "/ayuda",
+  "/offline",
+];
 const CLIENT_PAGES = ["/cliente/reservar", "/cliente/mis-turnos", "/cliente/turno/a-demo-client", "/cliente/tienda", "/cliente/perfil", "/cliente/historial", "/cliente/barberias"];
 const ADMIN_PAGES = [
   "/admin/agenda",
@@ -16,6 +27,7 @@ const ADMIN_PAGES = [
   "/admin/equipo",
   "/admin/configuracion",
   "/admin/recordatorios",
+  "/admin/sueldos",
 ];
 
 test.describe("Accesibilidad WCAG 2.1 AA y layout mobile", () => {

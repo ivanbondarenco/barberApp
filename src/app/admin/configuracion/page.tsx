@@ -41,6 +41,11 @@ type InfoValues = z.infer<typeof infoSchema>;
 
 export default function ConfiguracionPage() {
   const [tab, setTab] = useState<Tab>("negocio");
+  // Los avisos de configuración pendiente traen ?tab=integraciones: se abre directo ahí.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    if (wanted === "integraciones" || wanted === "negocio" || wanted === "horarios" || wanted === "senas" || wanted === "cuenta") setTab(wanted);
+  }, []);
   return (
     <Page className="gap-4 px-5 pb-6 pt-1">
       <Segmented

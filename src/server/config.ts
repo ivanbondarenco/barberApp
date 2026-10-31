@@ -66,6 +66,9 @@ export function productionConfig(env: Env = process.env): ConfigReport {
   if (!env.ALERT_WEBHOOK_URL?.trim()) {
     warnings.push("Sin ALERT_WEBHOOK_URL los errores solo quedan en el log: un webhook de pago que falle no avisa a nadie.");
   }
+  if (!env.VAPID_PUBLIC_KEY?.trim() || !env.VAPID_PRIVATE_KEY?.trim()) {
+    warnings.push("Sin VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no hay avisos push de turnos nuevos. Generalas con `npx web-push generate-vapid-keys`.");
+  }
   if (!env.DATABASE_PATH?.trim()) {
     warnings.push("Sin DATABASE_PATH la base queda en ./data: asegurate de que sea un disco persistente.");
   }

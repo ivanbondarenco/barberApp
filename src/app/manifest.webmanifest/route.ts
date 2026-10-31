@@ -42,12 +42,14 @@ export async function GET() {
       display: "standalone",
       orientation: "portrait",
       theme_color: "#1D4ED8",
-      background_color: "#F8F9FF",
+      // Pantalla de carga de la app instalada: el mismo navy del ícono.
+      background_color: "#0A1020",
       categories: ["lifestyle", "business"],
       icons: [
         { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
         { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
         { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        { src: "/icons/app-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
       ],
       shortcuts: [
         { name: "Reservar turno", url: "/cliente/reservar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },

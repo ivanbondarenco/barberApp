@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gestión de barbería">
+  <rect width="512" height="512" rx="108" fill="#0A1020"/>
+  <g fill="none" stroke="#8FAEFF" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M131 347C121 340 116 331 116 319V190C116 174 128 161 144 161H368C384 161 396 174 396 190V319C396 331 391 340 381 347" stroke-width="25"/>
+    <path d="M184 116V175M328 116V175" stroke-width="31"/>
+  </g>
+  <path d="M225 216L251 241L290 201" fill="none" stroke="#6EE7B7" stroke-linecap="round" stroke-linejoin="round" stroke-width="23"/>
+  <g fill="#8FAEFF">
+    <path d="M164 217Q156 208 158 224Q168 267 225 322L245 300Z"/>
+    <path d="M348 217Q356 208 354 224Q344 267 287 322L267 300Z"/>
+  </g>
+  <g fill="none" stroke="#8FAEFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="24">
+    <path d="M266 303L224 349M246 303L288 349"/>
+    <circle cx="196" cy="379" r="43"/>
+    <circle cx="316" cy="379" r="43"/>
+  </g>
+  <circle cx="256" cy="303" r="13" fill="#0A1020"/>
+</svg>

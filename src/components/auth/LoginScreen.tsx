@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { SignupLink } from "@/components/auth/SignupLink";
 import { LogoSeal } from "@/components/layout/Logo";
 import { homeFor, ScreenLoader } from "@/components/layout/RoleGuard";
 import { NAV } from "@/components/motion/Page";
@@ -190,9 +191,7 @@ export function LoginScreen() {
           ) : (
             <p className="text-secondary">
               ¿No creaste tu barbería?{" "}
-              <Link href="/auth/nueva-barberia" transitionTypes={[...NAV.forward]} className="text-link">
-                Creala
-              </Link>
+              <SignupLink className="text-link">Creala</SignupLink>
             </p>
           )}
           <Link href="/politicas" className="inline-flex min-h-10 items-center text-xs text-muted underline-offset-2 hover:underline">
