@@ -41,7 +41,7 @@ export default function LocalPage() {
 
   // Sin barbería elegida no hay carta que mostrar: al selector.
   useEffect(() => {
-    if (hydrated && synced && !shop) router.replace("/");
+    if (hydrated && synced && !shop) router.replace("/auth/login");
   }, [hydrated, synced, shop, router]);
 
   const services = useMemo(() => allServices.filter((s) => s.active), [allServices]);

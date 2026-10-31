@@ -54,7 +54,7 @@ test.describe.serial("alta y aislamiento de barberías", () => {
   });
 
   test("el dueño carga, edita y elimina sus propios servicios, con su precio", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     await fillLogin(page, "barbero", NUEVA.email, NUEVA.password);
     await page.waitForURL("**/admin/agenda");
     await page.goto("/admin/servicios");
@@ -102,7 +102,7 @@ test.describe.serial("alta y aislamiento de barberías", () => {
   });
 
   test("el dueño entra a su barbería sin elegirla y no ve nada de la otra", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     await fillLogin(page, "barbero", NUEVA.email, NUEVA.password);
     await page.waitForURL("**/admin/agenda");
 

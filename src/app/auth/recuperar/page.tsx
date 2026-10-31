@@ -57,7 +57,7 @@ export default function RecuperarPage() {
       title="Recuperar contraseña"
       footer={
         step === 3 ? (
-          <Link href="/" className="tap btn-primary">
+          <Link href="/auth/login" className="tap btn-primary">
             Ir a ingresar
           </Link>
         ) : (

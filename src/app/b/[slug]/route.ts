@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(_request: Request, ctx: RouteContext<"/b/[slug]">) {
   const { slug } = await ctx.params;
   const shop = await shopBySlug(slug);
-  if (!shop) redirect("/?local=desconocido");
+  if (!shop) redirect("/auth/login?local=desconocido");
   await rememberShop(shop.slug);
 
   const account = await getAccount();

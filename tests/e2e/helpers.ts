@@ -65,13 +65,13 @@ export async function fillLogin(page: Page, tab: "cliente" | "barbero", identifi
 }
 
 export async function loginAsClient(page: Page, email = CLIENT.email, password = CLIENT.password) {
-  await page.goto("/");
+  await page.goto("/auth/login");
   await fillLogin(page, "cliente", email, password);
   await page.waitForURL("**/cliente/reservar");
 }
 
 export async function loginAsAdmin(page: Page) {
-  await page.goto("/");
+  await page.goto("/auth/login");
   await fillLogin(page, "barbero", ADMIN.email, ADMIN.password);
   await page.waitForURL("**/admin/agenda");
 }

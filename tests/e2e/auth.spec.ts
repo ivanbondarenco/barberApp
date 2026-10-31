@@ -6,9 +6,35 @@ test.beforeAll(resetData);
 /** Cuenta que crea el test de registro y usan los de recuperación. */
 const BRUNO = { name: "Bruno Díaz", email: "bruno.diaz@example.com", phone: "+54 9 11 2222 3333", password: "bruno-2026" };
 
-test.describe("Ingreso", () => {
-  test("al abrir la app se ve directamente el ingreso, con las dos solapas", async ({ page }) => {
+test.describe("Landing", () => {
+  test("sin sesión, la portada presenta la app y lleva a crear la barbería", async ({ page }) => {
     await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Una sola agenda");
+    await expect(page.getByText("2 cortes", { exact: false }).first()).toBeVisible();
+    await page.getByRole("link", { name: "Probar la demo gratis" }).first().click();
+    await page.waitForURL("**/auth/nueva-barberia");
+  });
+
+  test("el pie lleva a los términos y a la privacidad", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("contentinfo").getByRole("link", { name: "Términos" }).click();
+    await expect(page.getByRole("heading", { name: "Términos y condiciones" })).toBeVisible();
+    await expect(page.getByText("1 mes de prueba gratis")).toBeVisible();
+    await page.goto("/");
+    await page.getByRole("contentinfo").getByRole("link", { name: "Privacidad" }).click();
+    await expect(page.getByRole("heading", { name: "Política de privacidad" })).toBeVisible();
+  });
+
+  test("Ingresar lleva al formulario de ingreso", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("banner").getByRole("link", { name: "Ingresar" }).click();
+    await expect(page.getByRole("heading", { name: "Ingresá a tu cuenta" })).toBeVisible();
+  });
+});
+
+test.describe("Ingreso", () => {
+  test("el ingreso muestra las dos solapas", async ({ page }) => {
+    await page.goto("/auth/login");
     await expect(page.getByRole("heading", { name: "Ingresá a tu cuenta" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Soy cliente" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("¿No tenés cuenta?")).toBeVisible();
@@ -21,7 +47,7 @@ test.describe("Ingreso", () => {
   });
 
   test("recuerda la última solapa usada", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     await page.getByRole("tab", { name: "Soy barbero" }).click();
     await page.reload();
     await expect(page.getByRole("tab", { name: "Soy barbero" })).toHaveAttribute("aria-selected", "true");
@@ -41,21 +67,21 @@ test.describe("Ingreso", () => {
   });
 
   test("contraseña incorrecta muestra un error claro y no inicia sesión", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     await fillLogin(page, "cliente", CLIENT.email, "no-es-esta");
     await expect(page.getByRole("alert").filter({ hasText: "Email o contraseña incorrectos" })).toBeVisible();
     expect((await pageState(page)).session).toBeNull();
   });
 
   test("valida el formulario antes de enviar", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     await page.getByRole("button", { name: "Ingresar" }).click();
     await expect(page.getByText("Ingresá tu email")).toBeVisible();
     await expect(page.getByText("Ingresá tu contraseña")).toBeVisible();
   });
 
   test("una cuenta de cliente no entra como barbero", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     await fillLogin(page, "barbero", CLIENT.email, CLIENT.password);
     await expect(page.getByRole("alert").filter({ hasText: "Email o contraseña incorrectos" })).toBeVisible();
   });
@@ -71,7 +97,7 @@ test.describe("Ingreso", () => {
   });
 
   test("mostrar y ocultar la contraseña", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/auth/login");
     const password = page.getByLabel("Contraseña", { exact: true });
     await expect(password).toHaveAttribute("type", "password");
     await page.getByRole("button", { name: "Mostrar contraseña" }).click();

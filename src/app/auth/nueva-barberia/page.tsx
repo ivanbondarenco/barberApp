@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -136,6 +137,18 @@ export default function NuevaBarberiaPage() {
           <Check ok={longEnough}>Al menos {PASSWORD_MIN} caracteres</Check>
           <Check ok={matches}>Las dos contraseñas coinciden</Check>
         </ul>
+
+        <p className="text-xs leading-relaxed text-secondary">
+          Al crear tu barbería aceptás los{" "}
+          <Link href="/terminos" className="font-semibold text-primary">
+            términos y condiciones
+          </Link>{" "}
+          y la{" "}
+          <Link href="/privacidad" className="font-semibold text-primary">
+            política de privacidad
+          </Link>
+          .
+        </p>
 
         {serverError && (
           <p role="alert" className="rounded-2xl bg-error-container px-4 py-3 text-[13px] text-error">

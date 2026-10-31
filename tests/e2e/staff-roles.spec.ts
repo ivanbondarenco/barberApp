@@ -6,7 +6,7 @@ test.beforeAll(resetData);
 const BARBER = { name: "Nico", email: "nico@dsstudio.com.ar", password: "nico-2026" };
 
 async function loginAsBarber(page: Page) {
-  await page.goto("/");
+  await page.goto("/auth/login");
   await fillLogin(page, "barbero", BARBER.email, BARBER.password);
   await page.waitForURL("**/admin/agenda");
 }
@@ -99,7 +99,7 @@ test.describe.serial("cuentas de barbero", () => {
 
     // Y ya no entra. Hace falta un dispositivo limpio: esta pestaña sigue siendo la del dueño.
     const { context, page: fresh } = await newDevice(browser);
-    await fresh.goto("/");
+    await fresh.goto("/auth/login");
     await fillLogin(fresh, "barbero", BARBER.email, BARBER.password);
     await expect(fresh.getByText(/Email o contraseña incorrectos/)).toBeVisible();
     await context.close();
