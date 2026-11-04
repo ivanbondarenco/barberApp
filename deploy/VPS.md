@@ -133,7 +133,7 @@ chmod 600 .env.production        # que solo root lo pueda leer
 ```
 
 > **Guardá la `SECRETS_KEY` también fuera del servidor** (un gestor de contraseñas). Si se
-> pierde, cada barbería tiene que volver a cargar sus credenciales de Mercado Pago y WhatsApp.
+> pierde, cada barbería tiene que volver a conectar Mercado Pago y cargar sus credenciales de WhatsApp.
 
 Levantá todo (la primera vez compila, tarda unos minutos):
 
@@ -149,14 +149,36 @@ repetí `docker compose up -d`.
 Abrí `https://turnos.tudominio.com`: tiene que aparecer el ingreso, con candado. Desde **Soy
 barbero** creás tu barbería.
 
-## 7. Mercado Pago (una vez por barbería)
+## 7. Mercado Pago (una vez para toda la instalación)
 
-1. En Mercado Pago → **Tus integraciones** → tu aplicación → **Webhooks**: URL
-   `https://turnos.tudominio.com/api/payments/webhook`, evento **Pagos**. Guardá y copiá la
-   **clave secreta**.
-2. En la app → **Configuración → Pagos**: access token de producción y esa clave secreta.
+Hay **una sola aplicación** de Mercado Pago, a nombre tuyo. Cada barbería conecta **su** cuenta
+con el botón **Conectar con Mercado Pago** (OAuth) y las señas entran directo a esa cuenta: la
+tuya no recibe nada.
 
-Sin la clave secreta, el webhook rechaza todo y **ninguna seña online se acredita sola**.
+1. En Mercado Pago Developers → **Tus integraciones** → **Crear aplicación**: tipo de solución
+   **Checkout Pro**, tipo de API **API de Orders**.
+2. En **Editar aplicación** → **Configuración avanzada**:
+   - URL de redireccionamiento: `https://turnos.tudominio.com/api/payments/oauth/callback`
+     (exacta, sin barra al final).
+   - PKCE: **Sí**.
+   - Permisos: **Lectura**, **Acceso offline** (sin esto no hay `refresh_token` y la conexión
+     vence a los 180 días) y **Escritura**.
+3. Pestaña **Producción** → **Configuración de webhooks**: URL
+   `https://turnos.tudominio.com/api/payments/webhook`, eventos **Order (Mercado Pago)** y
+   **Vinculación de aplicaciones**. Guardá y copiá la **firma secreta**.
+4. **Credenciales** (pestaña Producción): copiá el **Client ID** y el **Client Secret**.
+5. En `.env.production` del VPS:
+   ```
+   MP_CLIENT_ID=...
+   MP_CLIENT_SECRET=...
+   MP_WEBHOOK_SECRET=...
+   ```
+   y reiniciá: `docker compose up -d`.
+6. Cada barbería, en la app → **Configuración → Conexiones** → **Conectar con Mercado Pago**.
+
+Sin `MP_WEBHOOK_SECRET`, el webhook rechaza todo y **ninguna seña online se acredita sola**.
+Sin `MP_CLIENT_ID`/`MP_CLIENT_SECRET`, el botón no aparece y la app cobra solo por
+transferencia y efectivo.
 
 ## 8. Backups
 

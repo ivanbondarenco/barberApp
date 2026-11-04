@@ -203,47 +203,43 @@ test.describe("ausencias y recordatorios", () => {
 });
 
 /**
- * Credenciales de la pasarela. Se limpian sí o sí al terminar: `demo.reset` no toca la tabla
- * de secretos, y un token de mentira dejado ahí rompería el resto de la suite.
+ * Conexiones del local. Se limpian sí o sí al terminar: `demo.reset` no toca la tabla de
+ * secretos, y una credencial de mentira dejada ahí rompería el resto de la suite.
  */
 test.describe.serial("configuración de Mercado Pago", () => {
   const clearCredentials = async () => {
     const api = await adminApi();
-    await api.post("/api/settings/payments", { data: { accessToken: "", publicKey: "", webhookSecret: "" } });
+    await api.delete("/api/settings/payments");
     await api.post("/api/settings/whatsapp", { data: { accessToken: "", phoneNumberId: "" } });
     await api.dispose();
   };
   test.afterAll(clearCredentials);
 
-  test("cargar el access token habilita el cobro online y nunca lo devuelve entero", async ({ page, browser }) => {
+  test("conectar Mercado Pago lleva a autorizar la app con OAuth y PKCE", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/admin/configuracion");
     await page.getByRole("tab", { name: "Conexiones" }).click();
-    await expect(page.getByText("Cobro online sin configurar")).toBeVisible();
+    await expect(page.getByText("Cobro online sin conectar")).toBeVisible();
 
-    await page.getByLabel("Access token de Mercado Pago").fill("APP_USR-token-de-prueba-9999");
-    await page.getByLabel("Clave secreta del webhook").fill("secreto-de-prueba");
-    await page.getByRole("button", { name: "Guardar Mercado Pago" }).click();
-    await expect(page.getByText("Cobro online activo")).toBeVisible();
+    // Ya no se pega ninguna credencial: hay un solo botón.
+    await expect(page.getByLabel("Access token de Mercado Pago")).toHaveCount(0);
+    const connect = page.getByRole("link", { name: "Conectar con Mercado Pago" });
+    await expect(connect).toHaveAttribute("href", "/api/payments/oauth/start");
 
-    // El servidor solo devuelve los últimos 4 caracteres.
+    // El inicio del OAuth redirige a Mercado Pago (no se sigue: saldría a internet).
+    const res = await page.request.get("/api/payments/oauth/start", { maxRedirects: 0 });
+    expect(res.status()).toBe(303);
+    const auth = new URL(res.headers().location);
+    expect(auth.origin).toBe("https://auth.mercadopago.com");
+    expect(auth.searchParams.get("client_id")).toBe("e2e-client-id");
+    expect(auth.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(auth.searchParams.get("redirect_uri")).toMatch(/\/api\/payments\/oauth\/callback$/);
+
+    // Una vuelta con un state que no es el nuestro no conecta nada.
+    const forged = await page.request.get("/api/payments/oauth/callback?code=TG-robado&state=otro", { maxRedirects: 0 });
+    expect(forged.headers().location).toMatch(/mp=error/);
     const status = await (await page.request.get("/api/settings/payments")).json();
-    expect(status.ready).toBe(true);
-    expect(status.canReceiveWebhooks).toBe(true);
-    expect(status.accessToken).toBe("••••9999");
-    expect(JSON.stringify(status)).not.toContain("APP_USR-token-de-prueba");
-
-    // Y el cliente ya ve Mercado Pago como medio de pago.
-    const { context, page: client } = await newDevice(browser);
-    await loginAsClient(client);
-    await client.getByRole("radio", { name: /Corte Clásico Tijera/ }).click();
-    const slots = client.getByRole("radiogroup", { name: "Horario" }).getByRole("radio");
-    await expect(slots.first()).toBeVisible();
-    await slots.first().click();
-    await client.getByRole("button", { name: /^Continuar/ }).click();
-    await client.getByRole("button", { name: "Pagar seña" }).click();
-    await expect(client.getByRole("dialog", { name: "Pagar seña" }).getByRole("radio", { name: "Mercado Pago" })).toBeVisible();
-    await context.close();
+    expect(status).toMatchObject({ connected: false, available: true, canReceiveWebhooks: true });
   });
 
   test("cargar WhatsApp habilita los códigos y no devuelve el token entero", async ({ page }) => {
@@ -269,7 +265,9 @@ test.describe.serial("configuración de Mercado Pago", () => {
     await loginAsClient(page);
     for (const url of ["/api/settings/payments", "/api/settings/whatsapp"]) {
       expect((await page.request.get(url)).status()).toBe(403);
-      expect((await page.request.post(url, { data: { accessToken: "robado" } })).status()).toBe(403);
     }
+    expect((await page.request.delete("/api/settings/payments")).status()).toBe(403);
+    expect((await page.request.post("/api/settings/whatsapp", { data: { accessToken: "robado" } })).status()).toBe(403);
+    expect((await page.request.get("/api/payments/oauth/start", { maxRedirects: 0 })).headers().location).toMatch(/auth\/login/);
   });
 });

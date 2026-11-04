@@ -30,9 +30,8 @@ La base se crea sola la primera vez y arranca **vacía**: la primera pantalla es
 | `DATABASE_PATH` | Ruta del archivo SQLite (por defecto `./data/ds-studio.db`) |
 | `SECRETS_KEY` | **Obligatoria en producción.** Clave (mínimo 32 caracteres) que cifra en la base las credenciales de Mercado Pago y WhatsApp de cada barbería. Se genera con `openssl rand -base64 32` |
 | `ALERT_WEBHOOK_URL` | Webhook de Slack o Discord (o cualquier URL que reciba JSON) al que llegan los errores del servidor |
-| `MP_ACCESS_TOKEN` | Credencial de Mercado Pago. Opcional: lo habitual es cargarla desde **Configuración → Pagos**, que la guarda por barbería |
-| `MP_WEBHOOK_SECRET` | Clave secreta de la notificación de pagos. Sin ella el webhook rechaza todo |
-| `MP_PUBLIC_KEY` | Public key de Mercado Pago (hoy sin uso en el checkout redirigido) |
+| `MP_CLIENT_ID`, `MP_CLIENT_SECRET` | Credenciales de la aplicación de Mercado Pago de la instalación. Con ellas cada barbería conecta su cuenta por OAuth desde **Configuración → Conexiones**. Sin ellas, solo transferencia y efectivo |
+| `MP_WEBHOOK_SECRET` | Firma secreta del webhook de esa aplicación. Sin ella el webhook rechaza todo |
 | `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID` | Credenciales de WhatsApp Cloud API. Opcionales: lo habitual es cargarlas desde **Configuración → Conexiones** |
 | `WA_TEMPLATE`, `WA_LANGUAGE` | Plantilla de autenticación aprobada por Meta y su idioma (por defecto `otp_code` / `es_AR`) |
 | `OTP_DEBUG` | **Solo desarrollo.** Con `1` los códigos viajan en la respuesta en vez de enviarse por WhatsApp. En producción la app no arranca con esto |
@@ -84,7 +83,7 @@ Pantalla ──run(command)──▶ Zustand (aplica el cambio al instante)
   - **Dueño**: todo.
   - **Sistema**: el webhook de la pasarela. Lo único que puede hacer es acreditar una seña.
 - **Sesiones**: cookie `httpOnly` con token aleatorio (se guarda solo su hash) y contraseña con hash `scrypt`.
-- **API**: `GET /api/state`, `POST /api/commands`, `POST /api/auth/{login,register,recover,password,logout}`, `GET|POST /api/auth/verificar`, `POST /api/memberships`, `GET|POST /api/shops`, `POST /api/payments/{checkout,webhook}`, `GET|POST /api/settings/payments`, `POST /api/staff/account`.
+- **API**: `GET /api/state`, `POST /api/commands`, `POST /api/auth/{login,register,recover,password,logout}`, `GET|POST /api/auth/verificar`, `POST /api/memberships`, `GET|POST /api/shops`, `POST /api/payments/{checkout,webhook}`, `GET /api/payments/oauth/{start,callback}`, `GET|DELETE /api/settings/payments`, `POST /api/staff/account`.
 
 ## Multi-barbería
 
@@ -95,7 +94,7 @@ Cada barbería es una isla. El aislamiento vive en la capa de datos, no en la UI
 - **Staff**: el dueño y cada barbero trabajan en **una sola** barbería (`users.shop_id`). Su email o celular no puede estar en otra: ni para crear una segunda barbería ni para darle acceso en otro local.
 - **Clientes**: tienen **una sola cuenta** (email y contraseña) y se suman a las barberías que quieran (`memberships`). En cada una tienen su ficha, su historial y su crédito. La barbería activa va en la sesión (`sessions.shop_id`) y se cambia desde el encabezado; solo puede ser una de las suyas.
 - **Visitantes sin sesión**: el link `/b/<slug>` deja la barbería en una cookie. Quien se registra desde ese link queda sumado a ese local; si no, al terminar elige en `/cliente/barberias`.
-- **Plata y avisos**: las credenciales de Mercado Pago y de WhatsApp se guardan por barbería (`secrets.scope`), y el webhook sabe a cuál acreditarle porque la barbería viaja en su `notification_url` y se verifica contra el `external_reference` del pago.
+- **Plata y avisos**: cada barbería conecta su cuenta de Mercado Pago por OAuth y su token se guarda cifrado por barbería (`secrets.scope`), igual que las credenciales de WhatsApp. Cada orden que crea la app queda en `mp_orders` con su barbería y su turno: así el webhook, que es uno solo para toda la instalación, sabe con qué cuenta consultarla y qué acreditar.
 - **Versión de estado**: cada barbería tiene la suya, así la sincronización de un local no despierta a los demás.
 - **Barbería nueva**: arranca con el dueño como primer sillón y todo lo demás vacío, **catálogo incluido**: cada local carga sus servicios con sus precios. `demo.reset` solo existe para la barbería de demostración.
 - **Credenciales cifradas**: lo que cada barbería carga en `secrets` se guarda con AES-256-GCM y la clave `SECRETS_KEY`, que vive en el entorno y nunca en la base. El valor cifrado queda atado a su barbería y a su nombre: copiarlo a otro local no sirve, porque no descifra.
@@ -151,15 +150,16 @@ La regla de fondo es una sola: **el navegador nunca decide si entró la plata.**
 
 | Medio | Qué pasa al reservar | Quién acredita |
 |---|---|---|
-| Mercado Pago | Turno `pendiente` que retiene el horario 15 min y redirige a Checkout Pro | El webhook, después de consultar el pago contra la API de Mercado Pago |
+| Mercado Pago | Turno `pendiente` que retiene el horario 15 min y redirige a Checkout Pro (API de Orders) | El webhook, después de consultar la orden contra la API de Mercado Pago |
 | Transferencia | Turno `pendiente` con el alias y el CBU a la vista | El staff, cuando la ve acreditada. El aviso del cliente la deja `en_revision`, que **no** es plata |
 | Efectivo | Turno `pendiente` con vencimiento 4 h antes | El staff, al cobrarla en el mostrador |
 | Crédito a favor | Turno `abonado` al instante | El servidor, que verifica y descuenta el crédito en la misma operación |
 | Sin seña (0%) | Turno confirmado al instante | Nada que acreditar: se cobra todo en el sillón |
 
 - **Reserva que vence**: una reserva digital retiene el horario `HOLD_MINUTES` (15). Si no se acredita, se libera sola — el barrido corre al principio de cada comando, sin cron.
-- **Webhook**: valida la firma HMAC (`x-signature` + `x-request-id`), consulta el pago con el access token del local y aplica cada notificación una sola vez. Configuralo en Mercado Pago apuntando a `/api/payments/webhook`.
-- **Sin credenciales cargadas** la app ofrece solo transferencia y efectivo.
+- **Conexión**: el dueño toca **Conectar con Mercado Pago**, autoriza en Mercado Pago y vuelve (OAuth con PKCE). El token dura 180 días y se renueva solo con el `refresh_token` cuando le quedan menos de 30. Si la cuenta desvincula la app desde Mercado Pago, el webhook la desconecta.
+- **Webhook**: valida la firma HMAC (`x-signature` + `x-request-id`) con `MP_WEBHOOK_SECRET`, busca la orden en `mp_orders`, la consulta con el token del local y acredita solo si está `processed`/`accredited` por el total. Cada orden se aplica una sola vez. Eventos: **Order (Mercado Pago)** y **Vinculación de aplicaciones**, apuntando a `/api/payments/webhook`.
+- **Sin Mercado Pago conectado** la app ofrece solo transferencia y efectivo.
 
 ## Ausencias y recordatorios
 
@@ -187,7 +187,7 @@ El rating de cada barbero **no se carga a mano**: sale de las reseñas reales de
 | Bloqueos de agenda | ✓ | — | ✓ |
 | Horarios y datos del negocio | — | ✓ | — |
 | Seña del local (0/30/50/100%) | — | ✓ | — |
-| Credenciales de Mercado Pago y WhatsApp, contraseña propia | — | ✓ | ✓ (campo vacío) |
+| Conexión de Mercado Pago, credenciales de WhatsApp, contraseña propia | — | ✓ | ✓ (desconectar / campo vacío) |
 
 ## UX y animaciones
 
@@ -255,7 +255,7 @@ Lo que hay que resolver una vez, antes de que un local cobre de verdad:
    - `ALERT_WEBHOOK_URL`, para enterarte de los errores.
    - `DATABASE_PATH=/data/ds-studio.db` (ya viene así en el `Dockerfile`).
 3. **Backups fuera del servidor.** `npm run backup` copia al mismo disco: si se pierde el servidor, se pierden con él. Programalo por cron y sincronizá `BACKUP_DIR` con un almacenamiento externo (S3, Backblaze, Google Drive).
-4. **Cada barbería, en Configuración**: sus credenciales de Mercado Pago **con la clave secreta del webhook** (sin ella ninguna seña online se acredita) y, si recupera contraseñas por WhatsApp, las de WhatsApp Cloud API.
+4. **Mercado Pago**: crear la aplicación de la instalación y cargar `MP_CLIENT_ID`, `MP_CLIENT_SECRET` y `MP_WEBHOOK_SECRET` (ver `deploy/VPS.md`, paso 7). Después, **cada barbería** conecta su cuenta desde **Configuración → Conexiones** y, si recupera contraseñas por WhatsApp, carga las credenciales de WhatsApp Cloud API.
 5. **Probar el arranque**: si la app no levanta, el log dice exactamente qué variable falta. `GET /api/health` tiene que responder `ok`.
 
 ## Pendiente para producción

@@ -10,9 +10,11 @@ import { decryptSecret, encryptSecret } from "./secret-box";
  * En la base van cifradas (ver `secret-box.ts`): el archivo solo no alcanza para leerlas.
  */
 export type SecretKey =
+  // Mercado Pago: los entrega el OAuth cuando la barbería conecta su cuenta (ver mercadopago.ts).
   | "mp_access_token"
+  | "mp_refresh_token"
+  | "mp_token_expires_at"
   | "mp_public_key"
-  | "mp_webhook_secret"
   | "wa_access_token"
   | "wa_phone_number_id"
   | "wa_template"
@@ -21,11 +23,11 @@ export type SecretKey =
 /**
  * Variable de entorno equivalente, como atajo para un deploy de un solo local.
  * Si la barbería tiene su credencial cargada, gana la suya.
+ *
+ * Mercado Pago no tiene atajo: cada barbería conecta su cuenta por OAuth, y el webhook necesita
+ * saber de qué cuenta es cada cobro.
  */
-const ENV_FALLBACK: Record<SecretKey, string> = {
-  mp_access_token: "MP_ACCESS_TOKEN",
-  mp_public_key: "MP_PUBLIC_KEY",
-  mp_webhook_secret: "MP_WEBHOOK_SECRET",
+const ENV_FALLBACK: Partial<Record<SecretKey, string>> = {
   wa_access_token: "WA_ACCESS_TOKEN",
   wa_phone_number_id: "WA_PHONE_NUMBER_ID",
   wa_template: "WA_TEMPLATE",
@@ -46,7 +48,8 @@ export async function getSecret(key: SecretKey, shopId: string): Promise<string 
       return undefined;
     }
   }
-  return process.env[ENV_FALLBACK[key]]?.trim() || undefined;
+  const envVar = ENV_FALLBACK[key];
+  return (envVar && process.env[envVar]?.trim()) || undefined;
 }
 
 /** Guarda (o borra, con cadena vacía) una credencial de la barbería. */

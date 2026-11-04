@@ -63,6 +63,9 @@ describe("configuración de producción", () => {
     DATABASE_PATH: "/data/ds-studio.db",
     VAPID_PUBLIC_KEY: "BPublica",
     VAPID_PRIVATE_KEY: "privada",
+    MP_CLIENT_ID: "6048",
+    MP_CLIENT_SECRET: "secreto",
+    MP_WEBHOOK_SECRET: "firma",
   };
 
   it("una configuración completa arranca sin errores ni avisos", () => {

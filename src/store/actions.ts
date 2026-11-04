@@ -195,16 +195,22 @@ export async function saveStaffAccount(input: { barberId: string; identifier: st
   return result;
 }
 
-/** Credenciales de Mercado Pago del local. */
-export async function savePaymentCredentials(input: {
-  accessToken?: string;
-  publicKey?: string;
-  webhookSecret?: string;
-}): Promise<Result> {
-  const result = await post("/api/settings/payments", input);
-  if (!result.ok) toast(result.error, "error");
-  else toast("Credenciales guardadas", "success");
-  return result;
+/** Desconecta la cuenta de Mercado Pago del local. */
+export async function disconnectMercadopago(): Promise<Result> {
+  try {
+    const res = await fetch("/api/settings/payments", { method: "DELETE", credentials: "same-origin" });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      toast(data.error ?? "No se pudo desconectar", "error");
+      return { ok: false, error: data.error ?? "No se pudo desconectar" };
+    }
+    await useAppStore.getState().refresh(true);
+    toast("Mercado Pago desconectado", "success");
+    return { ok: true };
+  } catch {
+    toast("Sin conexión. Revisá tu internet.", "error");
+    return { ok: false, error: "Sin conexión. Revisá tu internet." };
+  }
 }
 
 /** Credenciales de WhatsApp del local. */

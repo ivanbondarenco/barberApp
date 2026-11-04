@@ -33,6 +33,11 @@ const env = {
   MAIL_FROM: "",
   // Los errores que los tests provocan a propósito no tienen que llegar al canal de alertas.
   ALERT_WEBHOOK_URL: "",
+  // Next también carga .env.production: sin esto, los tests usarían la aplicación real de
+  // Mercado Pago. Con valores de mentira el botón de conectar aparece, pero no sale nada.
+  MP_CLIENT_ID: "e2e-client-id",
+  MP_CLIENT_SECRET: "e2e-client-secret",
+  MP_WEBHOOK_SECRET: "e2e-webhook-secret",
 };
 const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
 

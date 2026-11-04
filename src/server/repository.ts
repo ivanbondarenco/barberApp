@@ -40,9 +40,9 @@ const SETTINGS = ["depositSettings", "businessHours", "businessInfo"] as const;
 const cache = new Map<string, { version: number; state: DomainState }>();
 
 /** ¿La barbería tiene cargada esta credencial (o está la variable de entorno equivalente)? */
-function hasSecret(db: Database, shopId: string, key: string, envVar: string): boolean {
+function hasSecret(db: Database, shopId: string, key: string, envVar?: string): boolean {
   const row = queryOne<{ value: string }>(db, "SELECT value FROM secrets WHERE scope = ? AND key = ?", [shopId, key]);
-  return !!(row?.value?.trim() || process.env[envVar]?.trim());
+  return !!(row?.value?.trim() || (envVar && process.env[envVar]?.trim()));
 }
 
 function getVersion(db: Database, shopId: string): number {
@@ -110,7 +110,7 @@ function readState(db: Database, shopId: string): DomainState {
     businessInfo: setting("businessInfo") ?? seedBusinessInfo,
     // Derivado, nunca persistido: solo dice si la barbería tiene credenciales, jamás cuáles.
     integrations: {
-      mercadopagoReady: hasSecret(db, shopId, "mp_access_token", "MP_ACCESS_TOKEN"),
+      mercadopagoReady: hasSecret(db, shopId, "mp_access_token"),
       whatsappReady:
         hasSecret(db, shopId, "wa_access_token", "WA_ACCESS_TOKEN") &&
         hasSecret(db, shopId, "wa_phone_number_id", "WA_PHONE_NUMBER_ID"),

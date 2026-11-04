@@ -109,6 +109,22 @@ CREATE TABLE IF NOT EXISTS secrets (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (scope, key)
 );
+-- Cuenta de Mercado Pago conectada por OAuth a cada barbería. El user_id no es secreto: sirve
+-- para encontrar la barbería cuando Mercado Pago avisa que alguien desvinculó la app.
+CREATE TABLE IF NOT EXISTS mp_accounts (
+  shop_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  linked_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mp_accounts_user ON mp_accounts (user_id);
+-- Cada orden de Mercado Pago creada por la app y a qué turno corresponde. El webhook llega con
+-- el id de la orden y nada más: esto le dice con el token de qué barbería consultarla.
+CREATE TABLE IF NOT EXISTS mp_orders (
+  order_id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  appointment_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS payment_events (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,

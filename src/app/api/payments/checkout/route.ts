@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DomainError } from "@/lib/commands";
 import { getCurrentUser } from "@/server/auth";
 import { errorResponse, json, publicBaseUrl, readBody } from "@/server/http";
-import { createDepositPreference } from "@/server/mercadopago";
+import { createDepositOrder } from "@/server/mercadopago";
 import { loadState } from "@/server/repository";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +32,8 @@ export async function POST(request: Request) {
     if (appointment.status !== "confirmado") throw new DomainError("El turno no está activo");
     if (appointment.deposit.status === "abonada") throw new DomainError("La seña ya está abonada");
 
-    const preference = await createDepositPreference(shopId, appointment, state.businessInfo, publicBaseUrl(request));
-    return json({ initPoint: preference.initPoint, preferenceId: preference.id });
+    const order = await createDepositOrder(shopId, appointment, state.businessInfo, publicBaseUrl(request));
+    return json({ initPoint: order.initPoint, orderId: order.id });
   } catch (error) {
     return errorResponse(error);
   }

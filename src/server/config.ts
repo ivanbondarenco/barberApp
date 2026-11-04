@@ -63,6 +63,11 @@ export function productionConfig(env: Env = process.env): ConfigReport {
   if (!env.SMTP_HOST?.trim()) {
     warnings.push("Sin SMTP_HOST no se manda ningún mail (bienvenida, confirmar email, avisos de turnos).");
   }
+  if (!env.MP_CLIENT_ID?.trim() || !env.MP_CLIENT_SECRET?.trim()) {
+    warnings.push("Sin MP_CLIENT_ID y MP_CLIENT_SECRET las barberías no pueden conectar Mercado Pago: solo cobran por transferencia y efectivo.");
+  } else if (!env.MP_WEBHOOK_SECRET?.trim()) {
+    warnings.push("Sin MP_WEBHOOK_SECRET el webhook de Mercado Pago rechaza todo: ninguna seña online se acredita sola.");
+  }
   if (!env.ALERT_WEBHOOK_URL?.trim()) {
     warnings.push("Sin ALERT_WEBHOOK_URL los errores solo quedan en el log: un webhook de pago que falle no avisa a nadie.");
   }

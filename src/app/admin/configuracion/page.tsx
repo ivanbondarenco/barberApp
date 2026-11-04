@@ -11,6 +11,7 @@ import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
 import { IntegrationGuideButton } from "@/components/admin/IntegrationGuide";
 import { ShopLinkCard } from "@/components/admin/ShopLinkCard";
 import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Page } from "@/components/motion/Page";
 import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
@@ -20,7 +21,7 @@ import { minutesToTime, timeToMinutes } from "@/lib/dates";
 import { dayRanges, MAX_RANGES_PER_DAY, normalizeRanges } from "@/lib/schedule";
 import type { TimeRange } from "@/lib/types";
 import { ease } from "@/lib/motion";
-import { savePaymentCredentials, saveWhatsappCredentials, updateBusinessInfo, updateHours } from "@/store/actions";
+import { disconnectMercadopago, saveWhatsappCredentials, updateBusinessInfo, updateHours } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 
@@ -245,105 +246,110 @@ function HoursEditor() {
   );
 }
 
+const OAUTH_MESSAGES: Record<string, { text: string; tone: "success" | "error" }> = {
+  conectado: { text: "Mercado Pago conectado", tone: "success" },
+  cancelado: { text: "Cancelaste la conexión con Mercado Pago", tone: "error" },
+  error: { text: "No se pudo conectar Mercado Pago. Probá de nuevo.", tone: "error" },
+  "no-disponible": { text: "El cobro con Mercado Pago todavía no está habilitado", tone: "error" },
+};
+
 /**
- * Credenciales de Mercado Pago del local.
+ * Conexión con Mercado Pago del local.
  *
- * Nunca se muestran completas: el servidor devuelve solo los últimos 4 caracteres para
- * reconocerlas. Un campo vacío deja la credencial como está; para borrarla se usa el botón.
+ * El dueño toca "Conectar", autoriza a BarberApp en Mercado Pago con la cuenta de la barbería y
+ * vuelve acá. No copia ninguna credencial: el token lo recibe el servidor y nunca llega al
+ * navegador. Las señas se cobran a nombre de esa cuenta.
  */
 function PaymentsPanel() {
   const ready = useAppStore((s) => s.integrations.mercadopagoReady);
   const [status, setStatus] = useState<PaymentStatus | null>(null);
-  const [values, setValues] = useState({ accessToken: "", publicKey: "", webhookSecret: "" });
-  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  useEffect(() => {
-    void fetch("/api/settings/payments", { credentials: "same-origin", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: PaymentStatus | null) => d && setStatus(d))
-      .catch(() => undefined);
-  }, []);
-
-  const save = async () => {
-    // Solo se mandan los campos que el dueño realmente escribió.
-    const patch = Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim())) as Record<string, string>;
-    if (!Object.keys(patch).length) return;
-    setSaving(true);
-    const result = await savePaymentCredentials(patch);
-    setSaving(false);
-    if (!result.ok) return;
-    setValues({ accessToken: "", publicKey: "", webhookSecret: "" });
-    const refreshed = await fetch("/api/settings/payments", { credentials: "same-origin", cache: "no-store" });
-    if (refreshed.ok) setStatus((await refreshed.json()) as PaymentStatus);
+  const load = async () => {
+    const res = await fetch("/api/settings/payments", { credentials: "same-origin", cache: "no-store" });
+    if (res.ok) setStatus((await res.json()) as PaymentStatus);
   };
 
-  const fields = [
-    { key: "accessToken" as const, label: "Access token de Mercado Pago", hint: "Credencial de producción", stored: status?.accessToken },
-    { key: "publicKey" as const, label: "Public key", hint: "Opcional", stored: status?.publicKey },
-    {
-      key: "webhookSecret" as const,
-      label: "Clave secreta del webhook",
-      hint: "La genera Mercado Pago al configurar la notificación",
-      stored: status?.webhookSecret,
-    },
-  ];
+  useEffect(() => {
+    void load().catch(() => undefined);
+    // Vuelta del OAuth (?mp=conectado|cancelado|error): se avisa y se limpia la URL.
+    const params = new URLSearchParams(window.location.search);
+    const outcome = OAUTH_MESSAGES[params.get("mp") ?? ""];
+    if (!outcome) return;
+    toast(outcome.text, outcome.tone);
+    params.delete("mp");
+    const rest = params.toString();
+    window.history.replaceState(null, "", rest ? `${window.location.pathname}?${rest}` : window.location.pathname);
+    // La conexión cambió en el servidor: se trae el estado nuevo (mercadopagoReady).
+    void useAppStore.getState().refresh(true);
+  }, []);
+
+  const connected = status ? status.connected : ready;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-caps text-secondary">Mercado Pago</h2>
-        <IntegrationGuideButton guide="mercadopago" />
-      </div>
-      <div className={cn("rounded-2xl p-4", ready ? "bg-mint" : "bg-surface-lowest shadow-xs")}>
-        <p className={cn("text-[15px] font-semibold", ready && "text-mint-ink")}>
-          {ready ? "Cobro online activo" : "Cobro online sin configurar"}
+      <h2 className="text-caps text-secondary">Mercado Pago</h2>
+      <div className={cn("rounded-2xl p-4", connected ? "bg-mint" : "bg-surface-lowest shadow-xs")}>
+        <p className={cn("text-[15px] font-semibold", connected && "text-mint-ink")}>
+          {connected ? "Cobro online activo" : "Cobro online sin conectar"}
         </p>
-        <p className={cn("mt-1 text-[13px]", ready ? "text-mint-ink" : "text-secondary")}>
-          {ready
-            ? "Los clientes pueden pagar la seña con Mercado Pago."
-            : "Sin credenciales, la app ofrece solo transferencia y efectivo."}
+        <p className={cn("mt-1 text-[13px]", connected ? "text-mint-ink" : "text-secondary")}>
+          {connected
+            ? "Los clientes pagan la seña en Mercado Pago y la plata entra directo a tu cuenta."
+            : "Conectá la cuenta de Mercado Pago de la barbería para cobrar las señas online. Mientras tanto, la app ofrece solo transferencia y efectivo."}
         </p>
-        {ready && status && !status.canReceiveWebhooks && (
+        {connected && status?.linkedAt && (
+          <p className="mt-2 text-[13px] text-mint-ink">Conectado el {new Date(status.linkedAt).toLocaleDateString("es-AR")}</p>
+        )}
+        {connected && status && !status.canReceiveWebhooks && (
           <p className="mt-2 text-[13px] font-semibold text-error">
-            Falta la clave secreta del webhook: sin ella no se pueden acreditar los pagos automáticamente.
+            Falta configurar las notificaciones de pago en el servidor: las señas no se van a acreditar solas.
           </p>
         )}
       </div>
 
-      <div className="flex flex-col gap-3">
-        {fields.map((f) => (
-          <Field key={f.key} label={f.label} htmlFor={`mp-${f.key}`}>
-            <input
-              id={`mp-${f.key}`}
-              type="password"
-              autoComplete="off"
-              className="field font-mono"
-              placeholder={f.stored || f.hint}
-              value={values[f.key]}
-              onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-            />
-          </Field>
-        ))}
-      </div>
+      {connected ? (
+        <button type="button" onClick={() => setConfirming(true)} className="tap btn-destructive">
+          Desconectar Mercado Pago
+        </button>
+      ) : status && !status.available ? (
+        <p className="text-[13px] text-secondary">El cobro con Mercado Pago todavía no está habilitado en esta instalación.</p>
+      ) : (
+        <>
+          {/* Navegación completa: el OAuth sale a Mercado Pago y vuelve a esta pantalla. */}
+          <a href="/api/payments/oauth/start" className="tap btn-primary text-center">
+            Conectar con Mercado Pago
+          </a>
+          <p className="text-[13px] text-secondary">
+            Te lleva a Mercado Pago para que inicies sesión con la cuenta de la barbería y autorices a BarberApp a crear los
+            cobros de las señas. No hace falta copiar ninguna clave.
+          </p>
+        </>
+      )}
 
-      <p className="text-[13px] text-secondary">
-        En Mercado Pago configurá la notificación de pagos apuntando a <span className="font-mono">/api/payments/webhook</span> de
-        este sitio.
-      </p>
-
-      <button type="button" disabled={saving} onClick={() => void save()} className="tap btn-primary">
-        {saving ? "Guardando…" : "Guardar Mercado Pago"}
-      </button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="¿Desconectar Mercado Pago?"
+        description="Tus clientes ya no van a poder pagar la seña online. Las señas que ya se cobraron no cambian."
+        confirmLabel="Desconectar"
+        destructive
+        onConfirm={async () => {
+          const result = await disconnectMercadopago();
+          setConfirming(false);
+          if (result.ok) await load().catch(() => undefined);
+        }}
+      />
     </div>
   );
 }
 
 interface PaymentStatus {
-  accessToken: string;
-  publicKey: string;
-  webhookSecret: string;
-  ready: boolean;
+  connected: boolean;
+  available: boolean;
   canReceiveWebhooks: boolean;
+  linkedAt?: string;
+  expiresAt?: string;
 }
 
 /** Cambio de la contraseña de la cuenta del staff. */
