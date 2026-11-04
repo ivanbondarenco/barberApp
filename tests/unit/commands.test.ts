@@ -101,6 +101,50 @@ describe("reserva del cliente", () => {
   });
 });
 
+describe("reserva sin cuenta (invitado)", () => {
+  const guest = { role: "invitado", shopId: system.shopId } as const;
+  const guestBook = (overrides: Parameters<typeof bookPayload>[0] = {}) =>
+    bookPayload({ clientName: "Lucas Gómez", clientPhone: "11 4444-7788", depositPaid: true, ...overrides });
+
+  it("reserva con nombre y celular: abre ficha, la seña queda pendiente y el horario retenido", () => {
+    const next = run({ type: "appointment.book", payload: guestBook() }, guest);
+    const a = find(next, "a-test");
+    expect(a.clientName).toBe("Lucas Gómez");
+    expect(a.clientId).toBe("c-new");
+    expect(a.deposit.status).toBe("pendiente");
+    expect(a.holdUntil).toBeDefined();
+    expect(a.verified).toBe(false);
+    expect(a.source).toBe("app");
+    expect(next.clients.some((c) => c.id === "c-new" && c.phone === "11 4444-7788")).toBe(true);
+  });
+
+  it("si el celular ya es de un cliente del local, el turno va a su ficha", () => {
+    const next = run({ type: "appointment.book", payload: guestBook({ clientPhone: "+54 9 11 5555-0192" }) }, guest);
+    expect(find(next, "a-test").clientId).toBe("c-demo");
+    expect(next.clients.length).toBe(state.clients.length);
+  });
+
+  it("puede elegir pagar en el local", () => {
+    const next = run({ type: "appointment.book", payload: guestBook({ depositMethod: "efectivo" }) }, guest);
+    expect(find(next, "a-test").deposit).toMatchObject({ method: "efectivo", status: "pendiente" });
+  });
+
+  it("no puede transferir, usar crédito ni marcar la seña paga", () => {
+    expectError(() => run({ type: "appointment.book", payload: guestBook({ depositMethod: "transferencia" }) }, guest), /Mercado Pago o en el local/);
+    expectError(() => run({ type: "appointment.book", payload: guestBook({ depositMethod: "credito" }) }, guest), /cuenta/);
+  });
+
+  it("valida nombre y celular", () => {
+    expectError(() => run({ type: "appointment.book", payload: guestBook({ clientName: " " }) }, guest), /nombre/);
+    expectError(() => run({ type: "appointment.book", payload: guestBook({ clientPhone: "123" }) }, guest), /Celular/);
+  });
+
+  it("solo puede reservar", () => {
+    const booked = run({ type: "appointment.book", payload: guestBook() }, guest);
+    expectError(() => run({ type: "appointment.cancel", id: "a-test" }, guest, booked), /cuenta/, 403);
+  });
+});
+
 describe("turno manual (staff)", () => {
   it("crea la ficha del cliente si el celular es nuevo", () => {
     const next = run({ type: "appointment.book", payload: bookPayload({ clientName: "Walk In", clientPhone: "+54 9 11 1234 5678", depositPaid: false, depositMethod: "efectivo" }) });

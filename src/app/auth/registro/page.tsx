@@ -3,12 +3,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { homeFor } from "@/components/layout/RoleGuard";
 import { Field } from "@/components/ui/Field";
+import { readGuestContact } from "@/lib/guest-contact";
 import { PASSWORD_MIN, passwordSchema } from "@/lib/password";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
@@ -40,15 +41,26 @@ export default function RegistroPage() {
   const registerAccount = useAppStore((s) => s.register);
   const shop = useAppStore((s) => s.shop);
   const [error, setError] = useState<string | null>(null);
+  /** Llega desde la pantalla final de una reserva sin cuenta: ese turno queda en la cuenta nueva. */
+  const [fromBooking, setFromBooking] = useState(false);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", email: "", phone: "", password: "", passwordConfirm: "", accept: false },
   });
+
+  // Si ya reservó sin cuenta en este teléfono, nombre y celular ya los dejó: no se los pide de nuevo.
+  useEffect(() => {
+    setFromBooking(new URLSearchParams(window.location.search).get("desde") === "reserva");
+    const guest = readGuestContact();
+    if (guest.name) setValue("name", guest.name);
+    if (guest.phone) setValue("phone", guest.phone);
+  }, [setValue]);
 
   const onSubmit = async (v: Values) => {
     setError(null);
@@ -56,6 +68,8 @@ export default function RegistroPage() {
     if (!result.ok) return setError(result.error);
     toast(`¡Bienvenido, ${v.name.split(" ")[0]}!`, "success");
     const session = useAppStore.getState().session;
+    // Viene de reservar: el turno ya está en su cuenta (se vinculó por el celular), que lo vea.
+    if (fromBooking && session?.shop) return router.replace("/cliente/mis-turnos");
     router.replace(session ? homeFor(session) : "/");
   };
 
@@ -71,9 +85,11 @@ export default function RegistroPage() {
     >
       <form id="register-form" onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4 px-5 pb-6 pt-2">
         <p className="text-[15px] text-secondary">
-          {shop
-            ? `Con tu cuenta reservás en ${shop.name} y en cualquier otra barbería de la app.`
-            : "Con una sola cuenta reservás en todas las barberías donde te atendés."}
+          {fromBooking
+            ? "Tu turno queda guardado en tu cuenta, junto con tu historial. Usá el mismo celular con el que reservaste."
+            : shop
+              ? `Con tu cuenta reservás en ${shop.name} y en cualquier otra barbería de la app.`
+              : "Con una sola cuenta reservás en todas las barberías donde te atendés."}
         </p>
         <Field label="Nombre y apellido" htmlFor="r-name" error={errors.name?.message}>
           <input id="r-name" className="field py-3" autoComplete="name" {...register("name")} />

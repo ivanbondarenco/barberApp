@@ -265,6 +265,8 @@ export interface CheckoutResult {
   initPoint: string;
 }
 
+export type CheckoutOutcome = "exito" | "pendiente" | "error";
+
 /** Monto en el formato de la API de Orders: string con dos decimales. */
 const money = (amount: number) => amount.toFixed(2);
 
@@ -280,9 +282,11 @@ export async function createDepositOrder(
   appointment: Appointment,
   info: Pick<BusinessInfo, "name">,
   baseUrl: string,
+  /** Pantalla a la que vuelve. Por defecto, la del cliente con cuenta; el invitado usa la suya. */
+  backPath: (outcome: CheckoutOutcome) => string = (outcome) => `/cliente/pago/${outcome}?turno=${appointment.id}`,
 ): Promise<CheckoutResult> {
   const amount = money(appointment.deposit.amount);
-  const back = (outcome: "exito" | "pendiente" | "error") => `${baseUrl}/cliente/pago/${outcome}?turno=${appointment.id}`;
+  const back = (outcome: CheckoutOutcome) => `${baseUrl}${backPath(outcome)}`;
   const title = `Seña · ${appointment.serviceName}`.slice(0, 120);
 
   const data = await call<{ id: string; checkout_url?: string }>(shopId, "/v1/orders", {

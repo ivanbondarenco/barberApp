@@ -1,19 +1,77 @@
 import { expect, test } from "@playwright/test";
-import { adminApi, loginAsAdmin, loginAsClient, newDevice, openShop, pageState, resetData, runCommand, SHOP_SLUG } from "./helpers";
+import { adminApi, chooseDayAhead, loginAsAdmin, loginAsClient, newDevice, openShop, pageState, pickFirstSlot, resetData, runCommand, SHOP_SLUG } from "./helpers";
 
 test.beforeAll(resetData);
 
 test.describe("carta pública del local", () => {
-  test("el link del local lleva directo al ingreso como cliente de esa barbería", async ({ browser }) => {
+  test("el link del local lleva directo a reservar, sin cuenta", async ({ browser }) => {
     const { context, page } = await newDevice(browser);
     // Llega por el link que comparte la barbería, sin sesión.
     await page.goto(`/b/${SHOP_SLUG}`);
-    await page.waitForURL("**/auth/login**");
+    await page.waitForURL("**/reservar");
+    await expect(page.getByRole("heading", { name: "¿Qué te hacés?" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: /Corte Clásico Tijera/ })).toBeVisible();
+    await context.close();
+  });
 
-    await expect(page.getByRole("heading", { name: "Ingresá a tu cuenta" })).toBeVisible();
-    // Parado en esa barbería y con la solapa de cliente abierta, sin pasar por la carta.
-    await expect(page.getByText(/Reservá tu turno en D\.S Studio/)).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Soy cliente" })).toHaveAttribute("aria-selected", "true");
+  test("reserva sin cuenta: servicio, horario, nombre y celular, y paga la seña en el local", async ({ browser }) => {
+    const { context, page } = await newDevice(browser);
+    await page.goto(`/b/${SHOP_SLUG}`);
+    await page.waitForURL("**/reservar");
+
+    await page.getByRole("radio", { name: /Corte Clásico Tijera/ }).click();
+    await expect(page.getByRole("heading", { name: "¿Cuándo venís?" })).toBeVisible();
+    // Con días de anticipación: la seña en el local tiene plazo, y hoy ya puede haber pasado.
+    await chooseDayAhead(page, 3);
+    const time = await pickFirstSlot(page);
+    await page.getByRole("button", { name: new RegExp(`Continuar · ${time}`) }).click();
+    await expect(page.getByRole("heading", { name: "Confirmá tu turno" })).toBeVisible();
+
+    // Lo único que se le pide: nombre y celular. Y la seña, online o en el local.
+    await page.getByRole("radio", { name: /Pagar en el local/ }).click();
+    await page.getByRole("button", { name: "Reservar turno" }).click();
+    await expect(page.getByText("Ingresá tu nombre")).toBeVisible();
+
+    await page.getByLabel("Nombre").fill("Lucas Invitado");
+    await page.getByLabel("Celular").fill("11 4444 7788");
+    await page.getByRole("button", { name: "Reservar turno" }).click();
+
+    await page.waitForURL(/\/reserva\/pendiente\?turno=.+&t=/);
+    await expect(page.getByRole("heading", { name: "Turno reservado" })).toBeVisible();
+    await expect(page.getByText(`${time} hs`)).toBeVisible();
+    await expect(page.getByText("A nombre de Lucas Invitado")).toBeVisible();
+
+    // El local lo ve en su agenda, con la seña pendiente y sin verificar.
+    const id = new URL(page.url()).searchParams.get("turno")!;
+    const api = await adminApi();
+    const res = await api.get("/api/state");
+    const { state } = (await res.json()) as { state: { appointments: { id: string; clientName: string; verified: boolean; deposit: { status: string; method: string } }[] } };
+    expect(state.appointments.find((a) => a.id === id)).toMatchObject({
+      clientName: "Lucas Invitado",
+      verified: false,
+      deposit: { status: "pendiente", method: "efectivo" },
+    });
+    await api.dispose();
+
+    // Sin el token, nadie más puede ver la reserva.
+    const leaked = await page.request.get(`/api/reservas?turno=${id}&t=otro`);
+    expect(leaked.status()).toBe(404);
+
+    // Después de reservar se lo invita a crear la cuenta: nombre y celular ya vienen cargados.
+    await page.getByRole("link", { name: "Crear mi cuenta" }).click();
+    await page.waitForURL("**/auth/registro?desde=reserva");
+    await expect(page.getByLabel("Nombre y apellido")).toHaveValue("Lucas Invitado");
+    await expect(page.getByLabel("Celular")).toHaveValue("11 4444 7788");
+    await page.getByLabel("Email").fill("lucas.invitado@example.com");
+    await page.getByLabel("Contraseña", { exact: true }).fill("clave-segura-1");
+    await page.getByLabel("Repetir contraseña").fill("clave-segura-1");
+    await page.getByLabel(/Acepto las/).check();
+    await page.getByRole("button", { name: "Crear cuenta" }).click();
+
+    // El turno que reservó como invitado ya está en su cuenta.
+    await page.waitForURL("**/cliente/mis-turnos");
+    const { session, state: mine } = await pageState(page);
+    expect(mine.appointments.find((a) => a.id === id)).toMatchObject({ clientId: session?.clientId, clientName: "Lucas Invitado" });
     await context.close();
   });
 
@@ -31,9 +89,9 @@ test.describe("carta pública del local", () => {
     await expect(page.getByText("Domingo")).toBeVisible();
     await expect(page.getByText(/seña del 50%/i)).toBeVisible();
 
-    // Y recién ahí se le pide cuenta.
+    // Y reserva sin crear cuenta.
     await page.getByRole("link", { name: /Reservar turno/ }).click();
-    await page.waitForURL("**/auth/login");
+    await page.waitForURL("**/reservar");
     await context.close();
   });
 

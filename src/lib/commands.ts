@@ -59,12 +59,15 @@ export interface DomainState {
  * - `barbero`: solo su propia agenda; no toca catálogo, equipo ni configuración.
  * - `cliente`: solo lo propio, y únicamente los comandos de `CLIENT_COMMANDS`.
  * - `sistema`: webhook de la pasarela. Es el ÚNICO que puede acreditar un pago online.
+ * - `invitado`: visitante sin cuenta que llegó por el link del local. Solo puede reservar, con
+ *   nombre y celular, y paga la seña online o en el local con las mismas reglas que un cliente.
  */
 export type Actor =
   | { role: "admin"; shopId: string }
   | { role: "barbero"; shopId: string; barberId: string }
   | { role: "cliente"; shopId: string; clientId: string }
-  | { role: "sistema"; shopId: string };
+  | { role: "sistema"; shopId: string }
+  | { role: "invitado"; shopId: string };
 
 const isStaffActor = (actor: Actor): boolean => actor.role === "admin" || actor.role === "barbero";
 
@@ -80,7 +83,7 @@ export class DomainError extends Error {
 
 export interface BookPayload {
   id: string;
-  /** Solo turnos manuales: id a usar si el cliente todavía no existe. */
+  /** Turnos manuales y de invitados: id a usar si el cliente todavía no existe. */
   newClientId?: string;
   /**
    * Solo staff: ficha ya existente elegida del buscador. Manda sobre `clientName`/`clientPhone`.
@@ -193,6 +196,10 @@ function assertAllowed(actor: Actor, type: Command["type"]) {
   if (actor.role === "admin") return;
   if (actor.role === "sistema") {
     if (!SYSTEM_COMMANDS.has(type)) fail("Acción no permitida", 403);
+    return;
+  }
+  if (actor.role === "invitado") {
+    if (type !== "appointment.book") fail("Ingresá con tu cuenta para continuar", 403);
     return;
   }
   if (actor.role === "barbero") {
@@ -313,9 +320,8 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       let holdUntil: string | undefined;
       const method = p.depositMethod;
 
-      if (actor.role === "cliente") {
-        const self = clients.find((c) => c.id === actor.clientId) ?? fail("Perfil de cliente inexistente", 403);
-        client = self;
+      /** Reglas de la seña que elige quien reserva por su cuenta (cliente o invitado). */
+      const selfServiceDeposit = (self: ClientProfile) => {
         assertClientWindow(p.date, now);
         if (deposit === 0) {
           // El local no pide seña: no hay nada que acreditar ni horario que retener.
@@ -328,6 +334,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           const deadline = cashDepositDeadline(p.date, p.time, state.businessHours, CASH_DEPOSIT_DEADLINE_HOURS);
           if (deadline.getTime() <= now.getTime()) fail("Ya pasó el plazo para la seña en efectivo");
         } else if (method === "credito") {
+          if (actor.role !== "cliente") fail("Ingresá con tu cuenta para usar tu crédito");
           // Único caso en que el turno nace pago: el crédito se verifica y se descuenta acá.
           if (self.credit < deposit) fail("Tu crédito no alcanza para cubrir la seña");
           depositPaid = true;
@@ -335,9 +342,39 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         } else {
           if (method === "mercadopago" && !state.integrations.mercadopagoReady)
             fail("El pago online no está disponible. Elegí otro medio.");
+          // Sin cuenta no hay cómo avisar una transferencia: el invitado paga online o en el local.
+          if (actor.role === "invitado" && method !== "mercadopago") fail("Elegí pagar con Mercado Pago o en el local");
           // Retiene el horario mientras paga; si no se acredita, se libera solo.
           holdUntil = new Date(now.getTime() + HOLD_MINUTES * 60_000).toISOString();
         }
+      };
+
+      if (actor.role === "cliente") {
+        const self = clients.find((c) => c.id === actor.clientId) ?? fail("Perfil de cliente inexistente", 403);
+        client = self;
+        selfServiceDeposit(self);
+      } else if (actor.role === "invitado") {
+        // Reserva por el link sin cuenta: se identifica por el celular. Si ya es cliente del
+        // local, el turno va a su ficha (con su historial de ausencias); si no, se le abre una.
+        const name = p.clientName.trim();
+        const phone = p.clientPhone.trim();
+        if (name.length < 2) fail("Ingresá tu nombre");
+        if (!validPhone(phone)) fail("Celular inválido");
+        const existing = clients.find((c) => phoneKey(c.phone) === phoneKey(phone));
+        if (existing) {
+          client = existing;
+        } else {
+          client = {
+            id: p.newClientId ?? fail("Falta el id del cliente nuevo"),
+            name: name.slice(0, 80),
+            phone,
+            notifications: { reminder24h: true, whatsapp: true },
+            credit: 0,
+            createdAt: stamp,
+          };
+          clients = [...clients, client];
+        }
+        selfServiceDeposit(client);
       } else {
         if (method === "credito") fail("El crédito lo usa el cliente desde la app");
         // El staff sí puede marcarla cobrada: tiene la plata o el comprobante delante.
@@ -377,6 +414,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         clientId: client?.id,
         clientName: client?.name ?? walkIn?.name ?? fail("Falta el cliente del turno"),
         clientPhone: client?.phone ?? "",
+        // El invitado no probó que el celular sea suyo: el local lo ve como no verificado.
         verified: actor.role === "cliente" || !!client?.hasAccount,
         barberId: barber.id,
         serviceId: service.id,
@@ -394,7 +432,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         },
         products: [],
         status: "confirmado",
-        source: actor.role === "cliente" ? "app" : "manual",
+        source: actor.role === "cliente" || actor.role === "invitado" ? "app" : "manual",
         createdAt: stamp,
         ...(holdUntil ? { holdUntil } : {}),
       };

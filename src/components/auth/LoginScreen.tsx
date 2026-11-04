@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ArrowRight, Eye, EyeOff } from "lucide-react";
+import { ArrowRight, CalendarPlus, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -121,6 +121,16 @@ export function LoginScreen() {
             ]}
             className="mb-5"
           />
+
+          {isClient && shop && (
+            <div className="mb-5 flex flex-col gap-2">
+              <Link href="/reservar" transitionTypes={[...NAV.forward]} className="tap btn-primary py-3.5 text-[15px]">
+                <CalendarPlus size={18} /> Reservar turno
+              </Link>
+              <p className="text-center text-xs text-secondary">Sin cuenta: solo tu nombre y celular.</p>
+              <p className="mt-3 text-center text-[13px] font-medium text-secondary">¿Ya tenés cuenta? Ingresá</p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
             <Field label={isClient ? "Email" : "Celular o email"} htmlFor="identifier" error={errors.identifier?.message}>

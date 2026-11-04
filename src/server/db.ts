@@ -141,6 +141,14 @@ CREATE TABLE IF NOT EXISTS email_tokens (
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+-- Reservas hechas sin cuenta por el link del local. El token (se guarda solo su hash) es lo que
+-- le permite al invitado ver su turno y reintentar el pago desde la pantalla de resultado.
+CREATE TABLE IF NOT EXISTS guest_bookings (
+  token_hash TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  appointment_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 -- Códigos de verificación por WhatsApp. Se guarda el hash, nunca el código.
 -- Hay a lo sumo uno vigente por (barbería, identificador, trámite): pedir otro reemplaza el anterior.
 CREATE TABLE IF NOT EXISTS otp_codes (

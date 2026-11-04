@@ -40,7 +40,7 @@ function withoutCommission(barber: Barber): Barber {
  * - `barbero`: su agenda completa; los turnos de otros sillones, anonimizados. De sueldos, solo
  *   lo suyo: su comisión, sus adelantos y sus recibos.
  * - `cliente`: lo propio y la disponibilidad anónima.
- * - sin sesión: catálogo público.
+ * - sin sesión: catálogo público y la disponibilidad anónima.
  */
 export function stateForActor(state: DomainState, actor: Actor | null): DomainState {
   if (actor?.role === "admin") return state;
@@ -71,7 +71,13 @@ export function stateForActor(state: DomainState, actor: Actor | null): DomainSt
     advances: [],
     payouts: [],
   };
-  if (!actor || actor.role === "sistema") return publicPart;
+  // Sin sesión (o invitado): para elegir horario hace falta saber qué está ocupado, sin de quién.
+  if (!actor || actor.role === "sistema" || actor.role === "invitado") {
+    return {
+      ...publicPart,
+      appointments: state.appointments.filter((a) => a.status === "confirmado" && a.date >= today).map(anonymous),
+    };
+  }
 
   return {
     ...publicPart,

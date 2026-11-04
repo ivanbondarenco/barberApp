@@ -94,7 +94,7 @@ const when = (a: Appointment) => `${shortDate(a.date)} ${a.time}`;
 
 /** Qué avisar de un comando, si corresponde. Solo lo que hizo el cliente: el staff ya lo sabe. */
 export function pushMessageFor(command: Command, actor: Actor, prev: DomainState, next: DomainState): { barberId: string; message: PushMessage } | null {
-  if (actor.role !== "cliente") return null;
+  if (actor.role !== "cliente" && actor.role !== "invitado") return null;
   const before = new Map(prev.appointments.map((a) => [a.id, a]));
 
   if (command.type === "appointment.book") {

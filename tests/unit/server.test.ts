@@ -124,13 +124,15 @@ describe("repositorio SQLite", () => {
 });
 
 describe("visibilidad por rol", () => {
-  it("anónimo: solo catálogo público", async () => {
+  it("anónimo: catálogo público y la ocupación sin datos de nadie", async () => {
     const { loadState } = await loadServer();
     const { stateForActor } = await import("@/server/visibility");
     const { state } = await loadState(SHOP);
     const view = stateForActor(state, null);
     expect(view.clients).toEqual([]);
-    expect(view.appointments).toEqual([]);
+    // Para elegir horario necesita saber qué está ocupado, pero no de quién ni qué se hace.
+    expect(view.appointments.length).toBeGreaterThan(0);
+    expect(view.appointments.every((a) => a.status === "confirmado" && !a.clientName && !a.clientPhone && !a.clientId && !a.serviceName)).toBe(true);
     expect(view.services.every((s) => s.active)).toBe(true);
   });
 

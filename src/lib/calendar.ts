@@ -8,7 +8,10 @@ function icsStamp(d: Date): string {
 }
 
 /** Descarga un .ics para agregar el turno al calendario del teléfono. */
-export function downloadAppointmentIcs(appointment: Appointment, info: BusinessInfo): void {
+export function downloadAppointmentIcs(
+  appointment: Pick<Appointment, "id" | "date" | "time" | "durationMin" | "serviceName" | "deposit">,
+  info: BusinessInfo,
+): void {
   const start = dateTime(appointment.date, appointment.time);
   const end = new Date(start.getTime() + appointment.durationMin * 60_000);
   const reminder = new Date(start.getTime() - 3 * 3_600_000);
