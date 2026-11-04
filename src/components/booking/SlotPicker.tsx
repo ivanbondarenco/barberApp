@@ -2,19 +2,12 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "@/components/ui/Segmented";
 import { MonthCalendar } from "@/components/ui/MonthCalendar";
 import { addDays, monthGrid, sameMonth, todayISO } from "@/lib/dates";
 import { ease } from "@/lib/motion";
-import {
-  buildSlots,
-  CLIENT_BOOKING_DAYS,
-  clientBookingLimit,
-  openingHours,
-  shiftOf,
-  type Shift,
-} from "@/lib/schedule";
+import { buildSlots, CLIENT_BOOKING_DAYS, clientBookingLimit, openingHours, shiftOf, type Shift } from "@/lib/schedule";
 import { cn } from "@/lib/cn";
 import { useAppStore } from "@/store/useAppStore";
 
@@ -114,64 +107,91 @@ export function SlotPicker({
 
   const visible = shift === "manana" ? morning : afternoon;
 
+  // Al tocar un día, si los horarios quedan abajo de la pantalla (calendario largo en celular),
+  // se baja solo hasta ellos: si no, parece que el día no tiene lugar.
+  const slotsRef = useRef<HTMLDivElement>(null);
+  const [revealOn, setRevealOn] = useState<string | null>(null);
+  const selectDay = useCallback(
+    (d: string) => {
+      setRevealOn(d);
+      onDateChange(d);
+    },
+    [onDateChange],
+  );
+  useEffect(() => {
+    if (!revealOn || revealOn !== date) return;
+    setRevealOn(null);
+    const el = slotsRef.current;
+    if (!el) return;
+    // Lo que tapa abajo: la barra de "Continuar" y la navegación.
+    const firstRowBottom = el.getBoundingClientRect().top + 120;
+    if (firstRowBottom <= window.innerHeight - 160) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [revealOn, date]);
+
   return (
     <div className="flex flex-col gap-4">
       <MonthCalendar
         month={month}
         onMonthChange={setMonth}
         selected={date}
-        onSelect={onDateChange}
+        onSelect={selectDay}
         markOf={(iso) => ({ count: freeByDay.get(iso) ?? 0, disabled: !freeByDay.get(iso) })}
         minDate={today}
         maxDate={maxDate}
         hint={isClient ? `Podés reservar hasta ${CLIENT_BOOKING_DAYS / 7} semanas por adelantado.` : undefined}
       />
 
-      <Segmented
-        label="Turno"
-        value={shift}
-        onChange={setShift}
-        options={[
-          { value: "manana", label: "Mañana", count: morning.length },
-          { value: "tarde", label: "Tarde", count: afternoon.length },
-        ]}
-      />
+      <div ref={slotsRef} className="flex scroll-mt-24 flex-col gap-4">
+        <Segmented
+          label="Turno"
+          value={shift}
+          onChange={setShift}
+          options={[
+            { value: "manana", label: "Mañana", count: morning.length },
+            { value: "tarde", label: "Tarde", count: afternoon.length },
+          ]}
+        />
 
-      <AnimatePresence mode="wait" initial={false}>
-        <m.div
-          key={`${date}-${shift}`}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: ease.enter } }}
-          exit={{ opacity: 0, transition: { duration: 0.1 } }}
-        >
-          {visible.length === 0 ? (
-            <p className="rounded-2xl bg-surface-low px-4 py-6 text-center text-sm text-secondary">
-              No quedan horarios {shift === "manana" ? "a la mañana" : "a la tarde"}. Probá otro día.
-            </p>
-          ) : (
-            <div role="radiogroup" aria-label="Horario" className="grid grid-cols-4 gap-2">
-              {visible.map((slot) => {
-                const active = slot.time === time;
-                return (
-                  <button
-                    key={slot.time}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => onTimeChange(slot.time)}
-                    className={cn(
-                      "tap rounded-xl py-3 text-sm font-semibold tabular-nums transition-colors",
-                      active ? "bg-primary text-on-primary shadow-cta" : "bg-surface-lowest text-ink shadow-xs hover:bg-surface-low",
-                    )}
-                  >
-                    {slot.time}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </m.div>
-      </AnimatePresence>
+        <AnimatePresence mode="wait" initial={false}>
+          <m.div
+            key={`${date}-${shift}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: ease.enter } }}
+            exit={{ opacity: 0, transition: { duration: 0.1 } }}
+          >
+            {visible.length === 0 ? (
+              <p className="rounded-2xl bg-surface-low px-4 py-6 text-center text-sm text-secondary">
+                No quedan horarios {shift === "manana" ? "a la mañana" : "a la tarde"}. Probá otro día.
+              </p>
+            ) : (
+              <div role="radiogroup" aria-label="Horario" className="grid grid-cols-4 gap-2">
+                {visible.map((slot) => {
+                  const active = slot.time === time;
+                  return (
+                    <button
+                      key={slot.time}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => onTimeChange(slot.time)}
+                      className={cn(
+                        "tap rounded-xl py-3 text-sm font-semibold tabular-nums transition-colors",
+                        active
+                          ? "bg-primary text-on-primary shadow-cta"
+                          : "bg-surface-lowest text-ink shadow-xs hover:bg-surface-low",
+                      )}
+                    >
+                      {slot.time}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </m.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
