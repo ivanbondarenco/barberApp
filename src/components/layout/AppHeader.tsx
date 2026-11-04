@@ -13,6 +13,7 @@ import {
   MessageCircle,
   ReceiptText,
   History,
+  ImageUp,
   LogOut,
   type LucideIcon,
   Settings,
@@ -61,6 +62,7 @@ const OWNER_LINKS: MenuLink[] = [
   { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
   { href: "/admin/equipo", label: "Equipo", icon: Users },
   { href: "/admin/sueldos", label: "Sueldos y adelantos", icon: ReceiptText },
+  { href: "/admin/contenido", label: "Contenido para redes", icon: ImageUp },
   { href: "/admin/configuracion", label: "Configuración", icon: Settings },
 ];
 
@@ -69,6 +71,7 @@ const BARBER_LINKS: MenuLink[] = [
   { href: "/admin/clientes", label: "Clientes", icon: Contact },
   { href: "/admin/recordatorios", label: "Recordatorios", icon: BellRing },
   { href: "/admin/sueldos", label: "Mis ganancias", icon: ReceiptText },
+  { href: "/admin/contenido", label: "Contenido para redes", icon: ImageUp },
   { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
 

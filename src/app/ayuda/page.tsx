@@ -5,6 +5,7 @@ import { useState } from "react";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { cn } from "@/lib/cn";
 import { whatsappLink } from "@/lib/format";
+import { formatDayHours } from "@/lib/schedule";
 import { useAppStore } from "@/store/useAppStore";
 
 const FAQ = [
@@ -67,9 +68,9 @@ export default function AyudaPage() {
             <Clock size={14} className="mt-px shrink-0 text-primary" />
             <span>
               <strong className="block text-ink">
-                Lun–Vie {weekday.closed ? "cerrado" : `${weekday.open}–${weekday.close}`}
+                Lun–Vie {weekday.closed ? "cerrado" : formatDayHours(weekday, "–")}
               </strong>
-              Sáb {saturday.closed ? "cerrado" : `${saturday.open}–${saturday.close}`} · {DAY_NAMES[0]} {hours[0].closed ? "cerrado" : `${hours[0].open}–${hours[0].close}`}
+              Sáb {saturday.closed ? "cerrado" : formatDayHours(saturday, "–")} · {DAY_NAMES[0]} {hours[0].closed ? "cerrado" : formatDayHours(hours[0], "–")}
             </span>
           </p>
           <a href={`mailto:${info.email}`} className="flex items-center gap-1.5 text-[11px] font-semibold text-primary">

@@ -44,8 +44,8 @@ afterEach(() => vi.useRealTimers());
 describe("horario de atención", () => {
   it("domingo cerrado, sábado hasta las 18", () => {
     expect(openingHours("2026-09-20")).toBeNull();
-    expect(openingHours("2026-09-19")).toEqual({ open: "09:00", close: "18:00" });
-    expect(openingHours("2026-09-16")).toEqual({ open: "09:00", close: "20:00" });
+    expect(openingHours("2026-09-19")).toMatchObject({ open: "09:00", close: "18:00" });
+    expect(openingHours("2026-09-16")).toMatchObject({ open: "09:00", close: "20:00" });
   });
 
   it("respeta horarios personalizados", () => {
@@ -130,5 +130,43 @@ describe("cashDepositDeadline", () => {
 
   it("un lunes a primera hora vence el sábado a las 18", () => {
     expect(cashDepositDeadline("2026-09-21", "09:00")).toEqual(new Date(2026, 8, 19, 18, 0));
+  });
+});
+
+describe("horario partido", () => {
+  const split = DEFAULT_BUSINESS_HOURS.map((d) => ({
+    ...d,
+    open: "09:00",
+    close: "20:00",
+    ranges: [
+      { open: "09:00", close: "13:00" },
+      { open: "16:00", close: "20:00" },
+    ],
+  }));
+
+  it("no ofrece turnos en el corte del mediodía", () => {
+    const times = buildSlots({ date: "2026-12-16", barberId: "b1", durationMin: 30, appointments: [], blocks: [], hours: split, now: new Date(2026, 0, 1) }).map((s) => s.time);
+    expect(times).toContain("12:30");
+    expect(times).not.toContain("13:00");
+    expect(times).not.toContain("15:30");
+    expect(times).toContain("16:00");
+    expect(times.at(-1)).toBe("19:30");
+  });
+
+  it("un turno no puede cruzar el corte", () => {
+    const slots = buildSlots({ date: "2026-12-16", barberId: "b1", durationMin: 60, appointments: [], blocks: [], hours: split, now: new Date(2026, 0, 1) });
+    expect(slots.find((s) => s.time === "12:30")?.available).toBe(false);
+    expect(slots.find((s) => s.time === "12:00")?.available).toBe(true);
+  });
+
+  it("la ocupación cuenta solo las horas abiertas", () => {
+    const booked = [appt({ date: "2026-12-16", time: "09:00", durationMin: 240 })];
+    expect(occupancy("2026-12-16", "b1", booked, split)).toBe(50);
+  });
+
+  it("el plazo de la seña que cae en el corte pasa al cierre de la mañana", () => {
+    // Turno 17:00 − 4h = 13:00… se usa 18:00 − 4h = 14:00, en pleno corte.
+    const deadline = cashDepositDeadline("2026-12-16", "18:00", split);
+    expect([deadline.getHours(), deadline.getMinutes()]).toEqual([13, 0]);
   });
 });

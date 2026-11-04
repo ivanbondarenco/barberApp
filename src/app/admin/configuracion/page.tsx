@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Copy, Plus, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useEffect, useState } from "react";
@@ -15,7 +16,9 @@ import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
-import { minutesToTime } from "@/lib/dates";
+import { minutesToTime, timeToMinutes } from "@/lib/dates";
+import { dayRanges, MAX_RANGES_PER_DAY, normalizeRanges } from "@/lib/schedule";
+import type { TimeRange } from "@/lib/types";
 import { ease } from "@/lib/motion";
 import { savePaymentCredentials, saveWhatsappCredentials, updateBusinessInfo, updateHours } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
@@ -25,7 +28,8 @@ type Tab = "negocio" | "horarios" | "senas" | "integraciones" | "cuenta";
 
 const DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
-const TIMES = Array.from({ length: 31 }, (_, i) => minutesToTime(7 * 60 + i * 30));
+/** De 06:00 a 23:30, cada media hora. */
+const TIMES = Array.from({ length: 36 }, (_, i) => minutesToTime(6 * 60 + i * 30));
 
 const infoSchema = z.object({
   name: z.string().trim().min(3, "Ingresá el nombre de la barbería"),
@@ -152,30 +156,92 @@ function BusinessForm() {
 
 function HoursEditor() {
   const hours = useAppStore((s) => s.businessHours);
+
+  const saveRanges = (i: number, ranges: TimeRange[]) => {
+    const result = normalizeRanges(ranges);
+    if (typeof result === "string") return toast(result, "error");
+    void updateHours(i, { ranges: result });
+  };
+
+  const setRange = (i: number, idx: number, patch: Partial<TimeRange>) =>
+    saveRanges(i, dayRanges(hours[i]).map((r, k) => (k === idx ? { ...r, ...patch } : r)));
+
+  /** Suma una franja una hora después del cierre actual (ej. 09–13 → agrega 14–18). */
+  const addRange = (i: number) => {
+    const ranges = dayRanges(hours[i]);
+    const from = timeToMinutes(ranges[ranges.length - 1].close) + 60;
+    const last = timeToMinutes(TIMES[TIMES.length - 1]);
+    if (from + 30 > last) return toast("No queda lugar después del último horario. Ajustá el cierre primero.", "error");
+    saveRanges(i, [...ranges, { open: minutesToTime(from), close: minutesToTime(Math.min(from + 4 * 60, last)) }]);
+  };
+
+  const removeRange = (i: number, idx: number) => saveRanges(i, dayRanges(hours[i]).filter((_, k) => k !== idx));
+
+  /** Copia el horario de un día a todos los demás días abiertos. */
+  const copyToAll = async (from: number) => {
+    const ranges = dayRanges(hours[from]);
+    for (const i of ORDER) if (i !== from && !hours[i].closed) await updateHours(i, { ranges });
+    toast(`Horario de ${DAYS[from]} copiado a los días abiertos`, "success");
+  };
+
   return (
-    <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
-      {ORDER.map((i) => {
-        const day = hours[i];
-        return (
-          <li key={i} className="flex items-center gap-2 px-4 py-2.5">
-            <span className="w-20 shrink-0 text-[15px] font-medium">{DAYS[i]}</span>
-            <div className={cn("grid flex-1 grid-cols-2 gap-1.5 transition-opacity", day.closed && "pointer-events-none opacity-30")}>
-              <select aria-label={`Apertura ${DAYS[i]}`} value={day.open} onChange={(e) => void updateHours(i, { open: e.target.value })} className="field px-2 py-2 text-center text-sm">
-                {TIMES.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-              <select aria-label={`Cierre ${DAYS[i]}`} value={day.close} onChange={(e) => void updateHours(i, { close: e.target.value })} className="field px-2 py-2 text-center text-sm">
-                {TIMES.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            <Switch checked={!day.closed} onChange={(open) => void updateHours(i, { closed: !open })} label={`${DAYS[i]} abierto`} />
-          </li>
-        );
-      })}
-    </ul>
+    <div className="flex flex-col gap-2">
+      <p className="px-1 text-[13px] text-secondary">
+        Cada día puede tener varios horarios. Por ejemplo, de 09:00 a 13:00 y de 16:00 a 20:00 para cortar al mediodía.
+      </p>
+      <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
+        {ORDER.map((i) => {
+          const day = hours[i];
+          const ranges = dayRanges(day);
+          return (
+            <li key={i} className="flex flex-col gap-2 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="flex-1 text-[15px] font-medium">{DAYS[i]}</span>
+                {!day.closed && (
+                  <button type="button" onClick={() => void copyToAll(i)} className="tap chip bg-surface-low px-2 py-1 text-[12px] text-secondary" aria-label={`Copiar horario de ${DAYS[i]} a todos los días`}>
+                    <Copy size={13} /> Copiar a todos
+                  </button>
+                )}
+                <Switch checked={!day.closed} onChange={(open) => void updateHours(i, { closed: !open })} label={`${DAYS[i]} abierto`} />
+              </div>
+              {day.closed ? (
+                <p className="text-[13px] text-secondary">Cerrado</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {ranges.map((r, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5">
+                      <select aria-label={`Apertura ${DAYS[i]} franja ${idx + 1}`} value={r.open} onChange={(e) => setRange(i, idx, { open: e.target.value })} className="field flex-1 px-2 py-2 text-center text-sm">
+                        {TIMES.map((t) => (
+                          <option key={t}>{t}</option>
+                        ))}
+                      </select>
+                      <span className="text-[13px] text-secondary">a</span>
+                      <select aria-label={`Cierre ${DAYS[i]} franja ${idx + 1}`} value={r.close} onChange={(e) => setRange(i, idx, { close: e.target.value })} className="field flex-1 px-2 py-2 text-center text-sm">
+                        {TIMES.map((t) => (
+                          <option key={t}>{t}</option>
+                        ))}
+                      </select>
+                      {ranges.length > 1 ? (
+                        <button type="button" onClick={() => removeRange(i, idx)} className="tap grid size-9 shrink-0 place-items-center rounded-full text-secondary hover:bg-surface-low" aria-label={`Quitar franja ${idx + 1} de ${DAYS[i]}`}>
+                          <X size={16} />
+                        </button>
+                      ) : (
+                        <span className="size-9 shrink-0" />
+                      )}
+                    </div>
+                  ))}
+                  {ranges.length < MAX_RANGES_PER_DAY && (
+                    <button type="button" onClick={() => addRange(i)} className="tap flex items-center gap-1 self-start py-1 text-[13px] font-semibold text-primary">
+                      <Plus size={14} /> Agregar horario
+                    </button>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

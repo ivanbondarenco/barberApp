@@ -537,6 +537,12 @@ describe("ABM de catálogo, equipo y clientes", () => {
     expect(run({ type: "block.delete", id: "k1" }, admin, s).blocks.some((b) => b.id === "k1")).toBe(false);
     expectError(() => run({ type: "settings.hours", dayIndex: 1, patch: { close: "08:00" } }), /cierre/);
     expect(run({ type: "settings.hours", dayIndex: 0, patch: { closed: false } }).businessHours[0].closed).toBe(false);
+    // Horario partido: dos franjas en el mismo día, y la apertura/cierre del día salen de ellas.
+    const split = run({ type: "settings.hours", dayIndex: 1, patch: { ranges: [{ open: "16:00", close: "20:00" }, { open: "09:00", close: "13:00" }] } }).businessHours[1];
+    expect(split.ranges).toEqual([{ open: "09:00", close: "13:00" }, { open: "16:00", close: "20:00" }]);
+    expect([split.open, split.close]).toEqual(["09:00", "20:00"]);
+    expectError(() => run({ type: "settings.hours", dayIndex: 1, patch: { ranges: [{ open: "09:00", close: "14:00" }, { open: "13:00", close: "20:00" }] } }), /pisarse/);
+    expectError(() => run({ type: "settings.hours", dayIndex: 1, patch: { ranges: [] } }), /al menos/);
     expect(run({ type: "settings.info", patch: { transferAlias: "NUEVO.ALIAS" } }).businessInfo.transferAlias).toBe("NUEVO.ALIAS");
   });
 });

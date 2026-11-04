@@ -20,6 +20,7 @@ function routeMeta(pathname: string): { title: string; backHref?: string } {
   if (pathname === "/admin/recordatorios") return { title: "Recordatorios", backHref: "/admin/agenda" };
   if (pathname.startsWith("/admin/sueldos/recibo/")) return { title: "Recibo", backHref: "/admin/sueldos" };
   if (pathname === "/admin/sueldos") return { title: "Sueldos", backHref: "/admin/agenda" };
+  if (pathname === "/admin/contenido") return { title: "Contenido", backHref: "/admin/agenda" };
   const titles: Record<string, string> = {
     "/admin/agenda": "Agenda",
     "/admin/finanzas": "Finanzas",
@@ -36,6 +37,7 @@ const AGENDA_CHILDREN = [
   "/admin/configuracion",
   "/admin/recordatorios",
   "/admin/sueldos",
+  "/admin/contenido",
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { money, whatsappLink } from "@/lib/format";
 import { fadeUp, listItem } from "@/lib/motion";
 import { FREE_CANCELLATION_HOURS } from "@/lib/pricing";
+import { formatDayHours } from "@/lib/schedule";
 import { useAppStore, useHydrated } from "@/store/useAppStore";
 
 const DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -145,7 +146,7 @@ export default function LocalPage() {
                 <li key={i} className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-[14px]">{DAYS[i]}</span>
                   <span className={cn("text-[14px] tabular-nums", day?.closed ? "text-secondary" : "font-medium")}>
-                    {day?.closed ? "Cerrado" : `${day.open} – ${day.close}`}
+                    {formatDayHours(day)}
                   </span>
                 </li>
               );

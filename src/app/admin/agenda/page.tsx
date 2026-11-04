@@ -123,7 +123,7 @@ export default function AgendaPage() {
               <p className="text-[13px] text-secondary">
                 {dayAppointments.length} turnos
                 {pending > 0 && <> · {money(pending)} a cobrar</>}
-                {opening ? <> · abre {opening.open} a {opening.close}</> : <> · cerrado</>}
+                {opening ? <> · {opening.ranges.map((r) => `${r.open} a ${r.close}`).join(" y ")}</> : <> · cerrado</>}
               </p>
             </div>
             {date !== anchor && (

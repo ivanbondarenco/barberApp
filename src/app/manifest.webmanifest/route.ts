@@ -37,7 +37,8 @@ export async function GET() {
       short_name: short,
       description: `Reservá tu turno en ${name}.`,
       lang: "es-AR",
-      start_url: shop ? `/b/${shop.slug}` : "/",
+      // La app instalada nunca abre la landing: va al ingreso (o, con sesión, a su pantalla).
+      start_url: shop ? `/b/${shop.slug}` : "/auth/login",
       scope: "/",
       display: "standalone",
       orientation: "portrait",

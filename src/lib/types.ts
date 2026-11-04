@@ -272,10 +272,23 @@ export interface IntegrationSettings {
   whatsappReady: boolean;
 }
 
-export interface DayHours {
+/** Una franja continua de atención dentro del día, ej. 09:00 a 13:00. */
+export interface TimeRange {
   open: string;
   close: string;
+}
+
+export interface DayHours {
+  /** Apertura del día: la de la primera franja. */
+  open: string;
+  /** Cierre del día: el de la última franja. */
+  close: string;
   closed: boolean;
+  /**
+   * Franjas del día, ordenadas y sin pisarse (ej. 09–13 y 16–20 para cortar al mediodía).
+   * Sin este campo el día es una sola franja de `open` a `close`, como antes.
+   */
+  ranges?: TimeRange[];
 }
 
 /** Índice 0 = Domingo … 6 = Sábado */

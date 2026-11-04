@@ -1,5 +1,5 @@
 import { addDays, dateTime, fromISODate, minutesToTime, timeToMinutes, todayISO, toISODate } from "./dates";
-import type { Appointment, BusinessHours, TimeBlock } from "./types";
+import type { Appointment, BusinessHours, DayHours, TimeBlock, TimeRange } from "./types";
 
 export const SLOT_STEP_MIN = 30;
 export const AFTERNOON_FROM = "14:00";
@@ -32,13 +32,49 @@ export const DEFAULT_BUSINESS_HOURS: BusinessHours = [
   { open: "09:00", close: "18:00", closed: false }, // Sábado
 ];
 
+/** Máximo de franjas por día: alcanza para mañana, tarde y noche con cortes. */
+export const MAX_RANGES_PER_DAY = 4;
+
+/** Las franjas de atención de un día (aunque esté cerrado), ordenadas. */
+export function dayRanges(day: DayHours): TimeRange[] {
+  const list = day.ranges?.length ? day.ranges : [{ open: day.open, close: day.close }];
+  return [...list].sort((a, b) => a.open.localeCompare(b.open));
+}
+
+/** "09:00–13:00 y 16:00–20:00" para mostrar el horario de un día. */
+export function formatDayHours(day: DayHours | undefined, sep = " – "): string {
+  if (!day || day.closed) return "Cerrado";
+  return dayRanges(day)
+    .map((r) => `${r.open}${sep}${r.close}`)
+    .join(" y ");
+}
+
+/**
+ * Valida y normaliza las franjas de un día: cada una cierra después de abrir, no se pisan y
+ * quedan ordenadas. Devuelve el mensaje de error, o las franjas listas para guardar.
+ */
+export function normalizeRanges(ranges: TimeRange[]): TimeRange[] | string {
+  if (!ranges.length) return "Agregá al menos un horario";
+  if (ranges.length > MAX_RANGES_PER_DAY) return `Hasta ${MAX_RANGES_PER_DAY} franjas por día`;
+  const valid = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const sorted = [...ranges].sort((a, b) => a.open.localeCompare(b.open));
+  for (const [i, r] of sorted.entries()) {
+    if (!valid.test(r.open) || !valid.test(r.close)) return "Horario inválido";
+    if (r.close <= r.open) return "El cierre debe ser después de la apertura";
+    const prev = sorted[i - 1];
+    if (prev && r.open < prev.close) return "Los horarios de un mismo día no pueden pisarse";
+  }
+  return sorted.map((r) => ({ open: r.open, close: r.close }));
+}
+
 export function openingHours(
   iso: string,
   hours: BusinessHours = DEFAULT_BUSINESS_HOURS,
-): { open: string; close: string } | null {
+): { open: string; close: string; ranges: TimeRange[] } | null {
   const day = hours[fromISODate(iso).getDay()];
   if (!day || day.closed) return null;
-  return { open: day.open, close: day.close };
+  const ranges = dayRanges(day);
+  return { open: ranges[0].open, close: ranges[ranges.length - 1].close, ranges };
 }
 
 /**
@@ -106,8 +142,6 @@ export function buildSlots({
   const opening = openingHours(date, hours);
   if (!opening) return [];
 
-  const open = timeToMinutes(opening.open);
-  const close = timeToMinutes(opening.close);
   const isToday = date === todayISO();
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
@@ -129,14 +163,19 @@ export function buildSlots({
       .map((b) => [timeToMinutes(b.start), timeToMinutes(b.end)] as const),
   ];
 
+  // Cada franja arma sus propios horarios: un turno no puede cruzar el corte del mediodía.
   const slots: Slot[] = [];
-  for (let start = open; start + SLOT_STEP_MIN <= close; start += SLOT_STEP_MIN) {
-    const end = start + durationMin;
-    const available =
-      end <= close &&
-      !(isToday && start < nowMin + MIN_LEAD_MIN) &&
-      !busy.some(([bs, be]) => overlaps(start, end, bs, be));
-    slots.push({ time: minutesToTime(start), available });
+  for (const range of opening.ranges) {
+    const open = timeToMinutes(range.open);
+    const close = timeToMinutes(range.close);
+    for (let start = open; start + SLOT_STEP_MIN <= close; start += SLOT_STEP_MIN) {
+      const end = start + durationMin;
+      const available =
+        end <= close &&
+        !(isToday && start < nowMin + MIN_LEAD_MIN) &&
+        !busy.some(([bs, be]) => overlaps(start, end, bs, be));
+      slots.push({ time: minutesToTime(start), available });
+    }
   }
   return slots;
 }
@@ -156,7 +195,8 @@ export function occupancy(
 ): number {
   const opening = openingHours(date, hours);
   if (!opening) return 0;
-  const openMin = timeToMinutes(opening.close) - timeToMinutes(opening.open);
+  const openMin = opening.ranges.reduce((sum, r) => sum + timeToMinutes(r.close) - timeToMinutes(r.open), 0);
+  if (openMin <= 0) return 0;
   const booked = appointments
     .filter((a) => a.date === date && a.barberId === barberId && a.status !== "cancelado")
     .reduce((sum, a) => sum + a.durationMin, 0);
@@ -174,7 +214,11 @@ export function cashDepositDeadline(date: string, time: string, hours?: Business
   const opening = openingHours(day, hours);
 
   if (opening && rawMin >= timeToMinutes(opening.open)) {
-    return rawMin <= timeToMinutes(opening.close) ? raw : dateTime(day, opening.close);
+    // Dentro de una franja vale tal cual; en un corte (o después del cierre), el cierre de la
+    // última franja que ya empezó.
+    const started = opening.ranges.filter((r) => rawMin >= timeToMinutes(r.open));
+    const last = started[started.length - 1];
+    return rawMin <= timeToMinutes(last.close) ? raw : dateTime(day, last.close);
   }
   for (let i = 0; i < 14; i++) {
     day = addDays(day, -1);

@@ -109,7 +109,7 @@ export async function pageState(page: Page) {
       clients: { id: string; name: string; phone: string; credit: number }[];
       appointments: { id: string; clientId?: string; clientName: string; status: string; time: string; date: string; deposit: { status: string; method: string }; products: unknown[]; reminderSentAt?: string; holdUntil?: string; rating?: number; barberId: string }[];
       blocks: { id: string; reason: string }[];
-      businessHours: { closed: boolean; open: string; close: string }[];
+      businessHours: { closed: boolean; open: string; close: string; ranges?: { open: string; close: string }[] }[];
       businessInfo: { name: string; address: string; whatsapp: string };
       depositSettings: { allowCash: boolean; rate: number };
       integrations: { mercadopagoReady: boolean; whatsappReady: boolean };

@@ -16,7 +16,7 @@ import {
   splitDeposit,
 } from "./pricing";
 import { isValidCommission, payrollPreview } from "./payroll";
-import { buildSlots, cashDepositDeadline, CLIENT_BOOKING_DAYS, withinClientWindow } from "./schedule";
+import { buildSlots, cashDepositDeadline, CLIENT_BOOKING_DAYS, normalizeRanges, withinClientWindow } from "./schedule";
 import type {
   Advance,
   Appointment,
@@ -33,6 +33,7 @@ import type {
   Product,
   Service,
   TimeBlock,
+  TimeRange,
 } from "./types";
 
 export interface DomainState {
@@ -831,8 +832,19 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
 
     case "settings.hours": {
       const day = state.businessHours[command.dayIndex] ?? fail("Día inválido");
-      const merged = { ...day, ...command.patch };
-      if (merged.close <= merged.open) fail("El cierre debe ser después de la apertura");
+      const { ranges: patchRanges, ...rest } = command.patch;
+      let merged = { ...day, ...rest };
+      if (patchRanges !== undefined) {
+        // Franjas nuevas (ej. 09–13 y 16–20): la apertura y el cierre del día salen de ellas.
+        const ranges = normalizeRanges(Array.isArray(patchRanges) ? patchRanges : []);
+        if (typeof ranges === "string") fail(ranges);
+        const list = ranges as TimeRange[];
+        merged = { ...merged, ranges: list, open: list[0].open, close: list[list.length - 1].close };
+      } else if (rest.open !== undefined || rest.close !== undefined) {
+        // Cambio de apertura/cierre sin franjas: el día vuelve a ser una sola franja.
+        if (merged.close <= merged.open) fail("El cierre debe ser después de la apertura");
+        merged = { ...merged, ranges: undefined };
+      }
       return { ...state, businessHours: state.businessHours.map((d, i) => (i === command.dayIndex ? merged : d)) };
     }
 

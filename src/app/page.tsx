@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Landing } from "@/components/landing/Landing";
 import { SessionRedirect } from "@/components/landing/SessionRedirect";
+import { STANDALONE_REDIRECT_SCRIPT } from "@/lib/pwa";
 
 export const metadata: Metadata = {
   title: "BarberApp · Turnos, señas y equipo para tu barbería",
@@ -11,10 +12,12 @@ export const metadata: Metadata = {
 /**
  * Punto de entrada: la presentación de BarberApp para quien llega por primera vez. El ingreso
  * vive en /auth/login, y con sesión abierta `SessionRedirect` manda a cada uno a su pantalla.
+ * Desde la app instalada (PWA) la landing no se muestra nunca: se va directo al ingreso.
  */
 export default function Home() {
   return (
     <>
+      <script dangerouslySetInnerHTML={{ __html: STANDALONE_REDIRECT_SCRIPT }} />
       <SessionRedirect />
       <Landing />
     </>
