@@ -20,7 +20,8 @@ import { getSecret, setSecret } from "./secrets";
  */
 
 const API = "https://api.mercadopago.com";
-const AUTH = "https://auth.mercadopago.com/authorization";
+// Dominio de Argentina: el genérico (.com) le pide al dueño que elija país antes de autorizar.
+const AUTH = "https://auth.mercadopago.com.ar/authorization";
 
 /** Se renueva el token cuando le quedan menos de estos días (dura 180). */
 const REFRESH_MARGIN_DAYS = 30;

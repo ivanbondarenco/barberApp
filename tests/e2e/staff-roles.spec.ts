@@ -230,7 +230,7 @@ test.describe.serial("configuración de Mercado Pago", () => {
     const res = await page.request.get("/api/payments/oauth/start", { maxRedirects: 0 });
     expect(res.status()).toBe(303);
     const auth = new URL(res.headers().location);
-    expect(auth.origin).toBe("https://auth.mercadopago.com");
+    expect(auth.origin).toBe("https://auth.mercadopago.com.ar");
     expect(auth.searchParams.get("client_id")).toBe("e2e-client-id");
     expect(auth.searchParams.get("code_challenge_method")).toBe("S256");
     expect(auth.searchParams.get("redirect_uri")).toMatch(/\/api\/payments\/oauth\/callback$/);

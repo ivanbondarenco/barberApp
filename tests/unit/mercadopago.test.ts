@@ -100,7 +100,7 @@ describe("OAuth", () => {
     expect(auth.challenge).toBe(createHash("sha256").update(auth.verifier).digest("base64url"));
 
     const url = new URL(authorizationUrl(oauthApp()!, { state: auth.state, challenge: auth.challenge, redirectUri: "https://x/cb" }));
-    expect(url.origin).toBe("https://auth.mercadopago.com");
+    expect(url.origin).toBe("https://auth.mercadopago.com.ar");
     expect(url.searchParams.get("client_id")).toBe("6048");
     expect(url.searchParams.get("code_challenge")).toBe(auth.challenge);
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
