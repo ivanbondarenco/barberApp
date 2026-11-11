@@ -32,7 +32,20 @@ export async function POST(request: Request) {
     if (appointment.status !== "confirmado") throw new DomainError("El turno no está activo");
     if (appointment.deposit.status === "abonada") throw new DomainError("La seña ya está abonada");
 
-    const order = await createDepositOrder(shopId, appointment, state.businessInfo, publicBaseUrl(request));
+    // Datos del comprador para Mercado Pago (email obligatorio, el resto mejora la aprobación).
+    const client = state.clients.find((c) => c.id === appointment.clientId);
+    const paid = state.appointments
+      .filter((a) => a.id !== appointment.id && a.clientId && a.clientId === appointment.clientId && a.deposit.status === "abonada")
+      .sort((a, b) => (b.deposit.paidAt ?? b.date).localeCompare(a.deposit.paidAt ?? a.date));
+    const order = await createDepositOrder(shopId, appointment, state.businessInfo, publicBaseUrl(request), undefined, {
+      name: client?.name ?? appointment.clientName,
+      email: client?.email,
+      phone: client?.phone ?? appointment.clientPhone,
+      registeredAt: client?.createdAt,
+      lastPurchaseAt: paid[0] ? (paid[0].deposit.paidAt ?? paid[0].date) : undefined,
+      firstPurchaseOnline: !paid.some((a) => a.deposit.method === "mercadopago"),
+      authenticated: current.actor.role === "cliente",
+    });
     return json({ initPoint: order.initPoint, orderId: order.id });
   } catch (error) {
     return errorResponse(error);

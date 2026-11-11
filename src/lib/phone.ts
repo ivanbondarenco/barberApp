@@ -27,6 +27,14 @@ export function arLocalDigits(value: string): string {
   return d;
 }
 
+/** Código de área y número por separado (como los pide Mercado Pago), o null si no son 10 dígitos. */
+export function arPhoneParts(value: string): { areaCode: string; number: string } | null {
+  const d = arLocalDigits(value);
+  if (d.length !== AR_LOCAL_DIGITS) return null;
+  const len = d.startsWith("11") ? 2 : AREA_3.test(d) ? 3 : 4;
+  return { areaCode: d.slice(0, len), number: d.slice(len) };
+}
+
 export function isArPhone(value: string): boolean {
   return arLocalDigits(value).length === AR_LOCAL_DIGITS;
 }

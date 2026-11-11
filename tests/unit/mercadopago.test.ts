@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { freezeTime, SHOP } from "./support/fixtures";
+import { freezeTime, SHOP, THURSDAY } from "./support/fixtures";
 
 /**
  * Mercado Pago por OAuth + API de Orders: conexión de la cuenta de cada barbería, creación de la
@@ -180,6 +180,36 @@ describe("orden de la seña", () => {
     expect(body.items[0].unit_price).toBe(body.total_amount);
     expect(body.config.online.success_url).toBe(`https://mibarberia.live/cliente/pago/exito?turno=${appointment.id}`);
     expect(await mp.findOrder("ord01sena")).toEqual({ shopId: SHOP, appointmentId: appointment.id });
+    // Sin MP_PLATFORM_ID configurado no se manda el encabezado.
+    expect(headers.get("x-platform-id")).toBeNull();
+  });
+
+  it("manda el email y el nombre del comprador, y el platform_id si está configurado", async () => {
+    const mp = await connectDemoShop();
+    const appointment = await pendingAppointment();
+    process.env.MP_PLATFORM_ID = "plat-123";
+    try {
+      const calls = mockFetch(() => ({ id: "ORD01PAYER", checkout_url: "https://mp/redirect" }));
+      await mp.createDepositOrder(SHOP, appointment, { name: "DS Studio" }, "https://mibarberia.live", undefined, {
+        name: "Tomás  Ferreyra Paz",
+        email: "tomas@example.com",
+      });
+      expect(new Headers(calls[0].init?.headers).get("x-platform-id")).toBe("plat-123");
+      expect(JSON.parse(String(calls[0].init?.body)).payer).toEqual({
+        email: "tomas@example.com",
+        first_name: "Tomás",
+        last_name: "Ferreyra Paz",
+      });
+    } finally {
+      delete process.env.MP_PLATFORM_ID;
+    }
+  });
+
+  it("orderPayer descarta un email inválido y tolera nombres de una palabra", async () => {
+    const { orderPayer } = await import("@/server/mercadopago");
+    expect(orderPayer({ name: "Mateo", email: "no-es-mail" })).toEqual({ first_name: "Mateo" });
+    expect(orderPayer({ name: "  " })).toBeUndefined();
+    expect(orderPayer(undefined)).toBeUndefined();
   });
 });
 
@@ -244,5 +274,106 @@ describe("webhook", () => {
     const mp = await connectDemoShop();
     await post({ type: "mp-connect", action: "application.deauthorized", user_id: 449636200 }, signedHeaders(undefined), "type=mp-connect");
     expect(await mp.mercadopagoReady(SHOP)).toBe(false);
+  });
+});
+
+describe("calidad de la integración", () => {
+  /** Turno nuevo con seña pendiente (la demo ya pagó el suyo en los tests de arriba). */
+  async function newPendingAppointment(id: string, time: string) {
+    const { executeCommand, loadState } = await import("@/server/repository");
+    await executeCommand(
+      { role: "admin", shopId: SHOP },
+      {
+        type: "appointment.book",
+        payload: {
+          id,
+          newClientId: `c-${id}`,
+          clientName: "Lucía Gómez",
+          clientPhone: "+54 9 351 555-1234",
+          barberId: "b-diego",
+          serviceId: "s-combo-barba",
+          date: THURSDAY,
+          time,
+          depositMethod: "mercadopago",
+        },
+      },
+    );
+    return (await loadState(SHOP)).state.appointments.find((a) => a.id === id)!;
+  }
+
+  it("manda teléfono, datos antifraude con claves planas e ítem con categoría y código", async () => {
+    const mp = await connectDemoShop();
+    const appointment = await newPendingAppointment("t-calidad", "10:00");
+    const calls = mockFetch(() => ({ id: "ORD01CAL", checkout_url: "https://mp/redirect" }));
+    await mp.createDepositOrder(SHOP, appointment, { name: "DS Studio" }, "https://mibarberia.live", undefined, {
+      name: "Lucía Gómez",
+      email: "lucia@example.com",
+      phone: "+54 9 351 555-1234",
+      registeredAt: "2026-01-02T10:00:00.000Z",
+      lastPurchaseAt: "2026-08-30",
+      firstPurchaseOnline: false,
+      authenticated: true,
+    });
+    const body = JSON.parse(String(calls[0].init?.body));
+    expect(body.payer.phone).toEqual({ area_code: "351", number: "5551234" });
+    expect(body.additional_info).toEqual({
+      "payer.authentication_type": "WEB",
+      "payer.registration_date": "2026-01-02T10:00:00.000Z",
+      "payer.last_purchase": "2026-08-30T00:00:00.000-03:00",
+      "payer.is_first_purchase_online": false,
+    });
+    expect(body.items[0]).toMatchObject({ external_code: "s-combo-barba", category_id: "services" });
+  });
+
+  it("al pedir un link nuevo cancela por la API el anterior que nadie empezó a pagar", async () => {
+    const mp = await connectDemoShop();
+    const appointment = await newPendingAppointment("t-cancel", "11:00");
+    mockFetch(() => ({ id: "ORD01VIEJA", checkout_url: "https://mp/redirect" }));
+    await mp.createDepositOrder(SHOP, appointment, { name: "DS Studio" }, "https://mibarberia.live");
+
+    const calls = mockFetch((url, init) => {
+      if (init?.method === "POST" && url.endsWith("/v1/orders")) return { id: "ORD01NUEVA", checkout_url: "https://mp/redirect" };
+      if (url.endsWith("/v1/orders/ORD01VIEJA")) return { id: "ORD01VIEJA", status: "created" };
+      return { id: "ORD01VIEJA", status: "canceled" };
+    });
+    await mp.createDepositOrder(SHOP, appointment, { name: "DS Studio" }, "https://mibarberia.live");
+
+    const cancel = calls.find((c) => c.url.endsWith("/v1/orders/ORD01VIEJA/cancel"));
+    expect(cancel?.init?.method).toBe("POST");
+    // La nueva no se toca.
+    expect(calls.some((c) => c.url.includes("ORD01NUEVA"))).toBe(false);
+  });
+
+  it("no cancela una orden que ya empezaron a pagar", async () => {
+    const mp = await connectDemoShop();
+    const calls = mockFetch(() => ({ id: "ORD01X", status: "action_required" }));
+    expect(await mp.cancelOrder(SHOP, "ORD01X")).toBe(false);
+    expect(calls.some((c) => c.url.endsWith("/cancel"))).toBe(false);
+  });
+
+  it("el repaso acredita una seña cobrada aunque el webhook no haya llegado", async () => {
+    const mp = await connectDemoShop();
+    const appointment = await newPendingAppointment("t-repaso", "15:00");
+    const amount = appointment.deposit.amount.toFixed(2);
+    mockFetch(() => ({ id: "ORD01PERDIDA", checkout_url: "https://mp/redirect" }));
+    await mp.createDepositOrder(SHOP, appointment, { name: "DS Studio" }, "https://mibarberia.live");
+
+    const { reconcileOrders, ordersToReconcile } = await import("@/server/mp-orders");
+    expect(await ordersToReconcile()).toContain("ORD01PERDIDA");
+
+    // Todavía sin pagar: no acredita.
+    mockFetch(() => ({ id: "ORD01PERDIDA", status: "action_required", external_reference: appointment.id }));
+    await reconcileOrders();
+
+    mockFetch((url) =>
+      url.includes("ORD01PERDIDA")
+        ? { id: "ORD01PERDIDA", status: "processed", status_detail: "accredited", external_reference: appointment.id, total_amount: amount, total_paid_amount: amount }
+        : { id: "otra", status: "canceled" },
+    );
+    expect(await reconcileOrders()).toBeGreaterThanOrEqual(1);
+    const { loadState } = await import("@/server/repository");
+    expect((await loadState(SHOP)).state.appointments.find((a) => a.id === appointment.id)!.deposit.status).toBe("abonada");
+    // Ya acreditada, sale del repaso.
+    expect(await ordersToReconcile()).not.toContain("ORD01PERDIDA");
   });
 });

@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { DomainError } from "@/lib/commands";
+import { arPhoneParts } from "@/lib/phone";
 import type { Appointment, BusinessInfo } from "@/lib/types";
 import { getDb, queryAll, queryOne } from "./db";
 import { reportError } from "./monitor";
@@ -236,13 +237,23 @@ export async function mercadopagoReady(shopId: string): Promise<boolean> {
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Identificador de plataforma que asigna Mercado Pago a las integraciones con varias cuentas
+ * (OAuth). Es obligatorio en ese modelo; mientras no lo tengamos, no se manda.
+ */
+export function platformId(): string | undefined {
+  return process.env.MP_PLATFORM_ID?.trim() || undefined;
+}
+
 async function call<T>(shopId: string, path: string, init?: RequestInit): Promise<T> {
+  const platform = platformId();
   const res = await fetch(`${API}${path}`, {
     ...init,
     cache: "no-store",
     headers: {
       Authorization: `Bearer ${await token(shopId)}`,
       "Content-Type": "application/json",
+      ...(platform ? { "X-Platform-Id": platform } : {}),
       ...init?.headers,
     },
   });
@@ -272,6 +283,61 @@ export type CheckoutOutcome = "exito" | "pendiente" | "error";
 const money = (amount: number) => amount.toFixed(2);
 
 /**
+ * Quien paga la seña. Mercado Pago pide el email y usa el resto para su motor antifraude:
+ * cuanto más sabe del comprador, más pagos aprueba.
+ */
+export interface DepositPayer {
+  name: string;
+  email?: string;
+  phone?: string;
+  /** Alta del cliente en la app (ISO). Solo clientes con cuenta. */
+  registeredAt?: string;
+  /** Fecha (ISO) de su última seña pagada, si tiene. */
+  lastPurchaseAt?: string;
+  /** Nunca pagó una seña online en este local. */
+  firstPurchaseOnline?: boolean;
+  /** Reservó con su cuenta (no como invitado). */
+  authenticated?: boolean;
+}
+
+interface OrderPayer {
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: { area_code: string; number: string };
+}
+
+/** Campo `payer` de la orden: el email solo si es válido, el nombre partido y el teléfono por partes. */
+export function orderPayer(payer: DepositPayer | undefined): OrderPayer | undefined {
+  if (!payer) return undefined;
+  const out: OrderPayer = {};
+  const email = payer.email?.trim();
+  if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) out.email = email;
+  const [first, ...rest] = payer.name.trim().split(/\s+/).filter(Boolean);
+  if (first) out.first_name = first.slice(0, 60);
+  if (rest.length) out.last_name = rest.join(" ").slice(0, 60);
+  const phone = payer.phone ? arPhoneParts(payer.phone) : null;
+  if (phone) out.phone = { area_code: phone.areaCode, number: phone.number };
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * `additional_info` de la orden: en la API de Orders son claves planas con punto
+ * (`"payer.registration_date"`), no un objeto anidado.
+ */
+export function orderAdditionalInfo(payer: DepositPayer | undefined): Record<string, string | boolean> | undefined {
+  if (!payer) return undefined;
+  const out: Record<string, string | boolean> = {};
+  if (payer.authenticated) out["payer.authentication_type"] = "WEB";
+  // Fechas ISO 8601 con hora: un día suelto ("2026-11-10") pasa a medianoche de Argentina.
+  const iso = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000-03:00` : value);
+  if (payer.registeredAt) out["payer.registration_date"] = iso(payer.registeredAt);
+  if (payer.lastPurchaseAt) out["payer.last_purchase"] = iso(payer.lastPurchaseAt);
+  if (payer.firstPurchaseOnline !== undefined) out["payer.is_first_purchase_online"] = payer.firstPurchaseOnline;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
  * Crea la orden de Checkout Pro por la seña del turno.
  *
  * `external_reference` lleva el id del turno, y la orden queda registrada en `mp_orders` con su
@@ -285,6 +351,7 @@ export async function createDepositOrder(
   baseUrl: string,
   /** Pantalla a la que vuelve. Por defecto, la del cliente con cuenta; el invitado usa la suya. */
   backPath: (outcome: CheckoutOutcome) => string = (outcome) => `/cliente/pago/${outcome}?turno=${appointment.id}`,
+  payer?: DepositPayer,
 ): Promise<CheckoutResult> {
   const amount = money(appointment.deposit.amount);
   const back = (outcome: CheckoutOutcome) => `${baseUrl}${backPath(outcome)}`;
@@ -300,10 +367,14 @@ export async function createDepositOrder(
       total_amount: amount,
       external_reference: appointment.id,
       description: title,
+      payer: orderPayer(payer ?? { name: appointment.clientName, phone: appointment.clientPhone }),
+      additional_info: orderAdditionalInfo(payer),
       items: [
         {
+          external_code: appointment.serviceId,
           title,
           description: `${appointment.date} ${appointment.time} hs`,
+          category_id: "services",
           quantity: 1,
           unit_price: amount,
         },
@@ -335,7 +406,45 @@ export async function createDepositOrder(
       new Date().toISOString(),
     ]),
   );
+  // El link anterior de este turno, si nadie lo pagó, ya no sirve: se cancela en Mercado Pago.
+  await cancelOpenOrders(shopId, appointment.id, data.id);
   return { id: data.id, initPoint: data.checkout_url };
+}
+
+/** Órdenes que la app creó para un turno, de la más nueva a la más vieja. */
+export async function ordersForAppointment(shopId: string, appointmentId: string): Promise<string[]> {
+  const db = await getDb();
+  return queryAll<{ order_id: string }>(
+    db,
+    "SELECT order_id FROM mp_orders WHERE shop_id = ? AND appointment_id = ? ORDER BY created_at DESC",
+    [shopId, appointmentId],
+  ).map((r) => r.order_id);
+}
+
+/**
+ * Cancela una orden por la API, solo si sigue en `created` (nadie empezó a pagarla): es lo que
+ * pide Mercado Pago antes de cancelar. Devuelve si la canceló.
+ */
+export async function cancelOrder(shopId: string, orderId: string): Promise<boolean> {
+  const order = await getOrder(shopId, orderId);
+  if (order.status !== "created") return false;
+  await call(shopId, `/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: "POST",
+    headers: { "X-Idempotency-Key": randomUUID() },
+  });
+  return true;
+}
+
+/** Cancela las órdenes sin pagar de un turno, salvo `keep`. Es prolijidad: si falla, no frena el cobro. */
+export async function cancelOpenOrders(shopId: string, appointmentId: string, keep?: string): Promise<void> {
+  for (const orderId of await ordersForAppointment(shopId, appointmentId)) {
+    if (orderId === keep) continue;
+    try {
+      await cancelOrder(shopId, orderId);
+    } catch {
+      // Ya quedó en el log desde `call`.
+    }
+  }
 }
 
 /** Barbería y turno de una orden creada por la app, o null si no es nuestra. */

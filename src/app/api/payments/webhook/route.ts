@@ -1,12 +1,12 @@
-import { disconnectAccount, findOrder, getOrder, isOrderPaid, shopsForUser, verifyWebhookSignature } from "@/server/mercadopago";
-import { executeCommand } from "@/server/repository";
-import { claimPaymentEvent } from "@/server/secrets";
+import { disconnectAccount, shopsForUser, verifyWebhookSignature } from "@/server/mercadopago";
+import { settleOrder } from "@/server/mp-orders";
 import { reportError } from "@/server/monitor";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Notificación de Mercado Pago. Es la ÚNICA vía por la que una seña online pasa a "abonada".
+ * Notificación de Mercado Pago: la vía principal por la que una seña online pasa a "abonada"
+ * (el respaldo es el repaso periódico de `src/server/mp-orders.ts`).
  *
  * Una sola URL y una sola firma para todas las barberías: es la de la aplicación BarberPagos.
  * Nada de lo que llega en el cuerpo se cree salvo el id: la orden se busca en `mp_orders` (la
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    if (topic === "order" && dataId) await handleOrder(dataId);
+    if (topic === "order" && dataId) await settleOrder(dataId);
     else if (topic === "mp-connect" && body.action?.includes("deauthorized") && body.user_id) {
       for (const shopId of await shopsForUser(String(body.user_id))) await disconnectAccount(shopId);
     }
@@ -55,34 +55,4 @@ export async function POST(request: Request) {
     await reportError("mercadopago.webhook", error);
     return Response.json({ ok: true });
   }
-}
-
-async function handleOrder(orderId: string) {
-  // Una orden que no creó la app (otra integración de la misma cuenta) no es asunto nuestro.
-  const ours = await findOrder(orderId);
-  if (!ours) return;
-
-  const order = await getOrder(ours.shopId, orderId);
-  // La orden tiene que ser del turno con el que se registró.
-  if (order.externalReference !== ours.appointmentId) {
-    console.warn("Orden de Mercado Pago con otro turno", {
-      orderId,
-      expected: ours.appointmentId,
-    });
-    return;
-  }
-  if (!isOrderPaid(order)) return;
-
-  // Mercado Pago reintenta la misma notificación: se aplica una sola vez.
-  if (!(await claimPaymentEvent(order.id, ours.shopId, ours.appointmentId, order.status))) return;
-
-  await executeCommand(
-    { role: "sistema", shopId: ours.shopId },
-    {
-      type: "appointment.deposit",
-      id: ours.appointmentId,
-      method: "mercadopago",
-      reference: order.id,
-    },
-  );
 }

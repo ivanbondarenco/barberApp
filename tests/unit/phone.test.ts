@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { whatsappLink } from "@/lib/format";
-import { arLocalDigits, arPhoneSchema, isArPhone, toArPhone } from "@/lib/phone";
+import { arLocalDigits, arPhoneParts, arPhoneSchema, isArPhone, toArPhone } from "@/lib/phone";
 
 describe("celulares argentinos", () => {
   it("se queda con los 10 dígitos locales venga como venga", () => {
@@ -32,5 +32,17 @@ describe("celulares argentinos", () => {
   it("el schema normaliza y explica el error", () => {
     expect(arPhoneSchema.parse(" 11 3096 9716 ")).toBe("+54 9 11 3096-9716");
     expect(arPhoneSchema.safeParse("123").success).toBe(false);
+  });
+});
+
+describe("arPhoneParts (teléfono para Mercado Pago)", () => {
+  it("separa el código de área de 2, 3 o 4 dígitos", () => {
+    expect(arPhoneParts("+54 9 11 3096-9716")).toEqual({ areaCode: "11", number: "30969716" });
+    expect(arPhoneParts("0351 15 555-1234")).toEqual({ areaCode: "351", number: "5551234" });
+    expect(arPhoneParts("2291 45-6789")).toEqual({ areaCode: "2291", number: "456789" });
+  });
+
+  it("devuelve null si no son 10 dígitos", () => {
+    expect(arPhoneParts("12345")).toBeNull();
   });
 });
