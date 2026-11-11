@@ -17,7 +17,8 @@ const config = () => ({
   host: process.env.SMTP_HOST?.trim(),
   port: Number(process.env.SMTP_PORT) || 587,
   user: process.env.SMTP_USER?.trim(),
-  password: process.env.SMTP_PASSWORD,
+  // Un espacio pegado al copiar la contraseña la rompe: se descartan los de los bordes.
+  password: process.env.SMTP_PASSWORD?.trim(),
   // El 465 es TLS desde el saludo; 587 y 25 arrancan en claro y suben con STARTTLS.
   secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "1" : Number(process.env.SMTP_PORT) === 465,
   from: process.env.MAIL_FROM?.trim() || process.env.SMTP_USER?.trim(),

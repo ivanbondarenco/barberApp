@@ -1,0 +1,22 @@
+{
+  "name": "mibarberia-reel",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Reel out/reel.mp4",
+    "render:nico": "remotion render Nico out/nico.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.542",
+    "@remotion/google-fonts": "^4.0.542",
+    "@remotion/media-utils": "^4.0.542",
+    "lucide-react": "^1.71.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}
