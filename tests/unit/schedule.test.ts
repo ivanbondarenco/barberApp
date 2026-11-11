@@ -8,6 +8,7 @@ import {
   occupancy,
   openingHours,
   shiftOf,
+  weekSlots,
   withinClientWindow,
 } from "@/lib/schedule";
 import type { Appointment, TimeBlock } from "@/lib/types";
@@ -168,5 +169,71 @@ describe("horario partido", () => {
     // Turno 17:00 − 4h = 13:00… se usa 18:00 − 4h = 14:00, en pleno corte.
     const deadline = cashDepositDeadline("2026-12-16", "18:00", split);
     expect([deadline.getHours(), deadline.getMinutes()]).toEqual([13, 0]);
+  });
+});
+
+describe("weekSlots (imagen semanal)", () => {
+  const week = (over: Partial<Parameters<typeof weekSlots>[0]> = {}) =>
+    weekSlots({
+      // Sábado 12, domingo 13 (cerrado), lunes 14 (hoy, 9:00) y martes 15.
+      days: ["2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15"],
+      barberIds: ["b1"],
+      durationMin: 60,
+      appointments: [],
+      blocks: [],
+      now: MONDAY_9AM,
+      ...over,
+    });
+
+  it("omite los días cerrados y ofrece los mismos horarios que la reserva", () => {
+    const res = week();
+    expect(res.map((d) => d.date)).toEqual(["2026-09-12", "2026-09-14", "2026-09-15"]);
+    const tue = res[2].slots.map((s) => s.time);
+    // Cada 30 min, y el último donde un servicio de 1 hora termina antes del cierre (20:00).
+    expect(tue[0]).toBe("09:00");
+    expect(tue[1]).toBe("09:30");
+    expect(tue[tue.length - 1]).toBe("19:00");
+    expect(res[2].slots.every((s) => !s.taken)).toBe(true);
+  });
+
+  it("coincide con los horarios disponibles de buildSlots", () => {
+    const appointments = [appt({ date: "2026-09-15", time: "11:00" })];
+    const fromWeek = week({ appointments })[2].slots.filter((s) => !s.taken).map((s) => s.time);
+    const fromBooking = buildSlots({ date: "2026-09-15", barberId: "b1", durationMin: 60, appointments, blocks: [], now: MONDAY_9AM })
+      .filter((s) => s.available)
+      .map((s) => s.time);
+    expect(fromWeek).toEqual(fromBooking);
+  });
+
+  it("tacha lo que ya pasó: días anteriores y horas de hoy", () => {
+    const [sat, mon] = week();
+    expect(sat.slots.every((s) => s.taken)).toBe(true);
+    expect(mon.slots.find((s) => s.time === "09:00")?.taken).toBe(true);
+    expect(mon.slots.find((s) => s.time === "10:00")?.taken).toBe(false);
+  });
+
+  it("tacha los turnos ocupados y los bloqueos", () => {
+    const res = week({
+      appointments: [appt({ date: "2026-09-15", time: "10:00", durationMin: 60 })],
+      blocks: [{ id: "x", barberId: "b1", date: "2026-09-15", start: "15:00", end: "16:30", reason: "" }],
+    });
+    const taken = res[2].slots.filter((s) => s.taken).map((s) => s.time);
+    expect(taken).toEqual(["09:30", "10:00", "10:30", "14:30", "15:00", "15:30", "16:00"]);
+  });
+
+  it("con varios barberos, el horario queda libre si alguno lo tiene", () => {
+    const res = week({
+      barberIds: ["b1", "b2"],
+      appointments: [appt({ date: "2026-09-15", time: "10:00" })],
+    });
+    expect(res[2].slots.find((s) => s.time === "10:00")?.taken).toBe(false);
+  });
+
+  it("respeta las franjas configuradas y el corte del mediodía", () => {
+    const split = [...DEFAULT_BUSINESS_HOURS];
+    split[2] = { open: "09:00", close: "18:00", closed: false, ranges: [{ open: "09:00", close: "12:00" }, { open: "16:00", close: "18:00" }] };
+    const tue = (durationMin: number) => week({ durationMin, hours: split })[2].slots.map((s) => s.time);
+    expect(tue(30)).toEqual(["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "16:00", "16:30", "17:00", "17:30"]);
+    expect(tue(60)).toEqual(["09:00", "09:30", "10:00", "10:30", "11:00", "16:00", "16:30", "17:00"]);
   });
 });

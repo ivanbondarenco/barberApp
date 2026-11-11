@@ -180,6 +180,63 @@ export function buildSlots({
   return slots;
 }
 
+export interface WeekDaySlots {
+  date: string;
+  slots: { time: string; taken: boolean }[];
+}
+
+/**
+ * Horarios de varios días para la imagen semanal de redes: los mismos que ofrece la reserva
+ * (cada `SLOT_STEP_MIN` dentro de las franjas configuradas, donde entra un servicio de
+ * `durationMin`). Un horario queda libre si al menos uno de los barberos lo tiene libre; lo que
+ * ya pasó (días anteriores, horas de hoy) cuenta como tomado para que se vea tachado. Los días
+ * cerrados no aparecen.
+ */
+export function weekSlots({
+  days,
+  barberIds,
+  durationMin,
+  appointments,
+  blocks,
+  hours,
+  now = new Date(),
+}: {
+  days: string[];
+  barberIds: string[];
+  durationMin: number;
+  appointments: Appointment[];
+  blocks: TimeBlock[];
+  hours?: BusinessHours;
+  now?: Date;
+}): WeekDaySlots[] {
+  const today = toISODate(now);
+  const result: WeekDaySlots[] = [];
+  for (const date of days) {
+    const opening = openingHours(date, hours);
+    if (!opening) continue;
+    const free = new Set<string>();
+    if (date >= today) {
+      for (const barberId of barberIds) {
+        for (const s of buildSlots({ date, barberId, durationMin, appointments, blocks, hours, now })) {
+          if (s.available) free.add(s.time);
+        }
+      }
+    }
+    // Los horarios donde el servicio no termina antes del corte no se ofrecen: no se muestran.
+    const fits = Math.max(durationMin, SLOT_STEP_MIN);
+    const slots: WeekDaySlots["slots"] = [];
+    for (const range of opening.ranges) {
+      const close = timeToMinutes(range.close);
+      for (let start = timeToMinutes(range.open); start + fits <= close; start += SLOT_STEP_MIN) {
+        const time = minutesToTime(start);
+        slots.push({ time, taken: !free.has(time) });
+      }
+    }
+    result.push({ date, slots });
+  }
+  return result;
+}
+
 /** Primer horario libre de un sillón a partir de ahora (o de la apertura si no es hoy). */
 export function nextFreeTime(query: Omit<SlotQuery, "durationMin">): string | null {
   const slot = buildSlots({ ...query, durationMin: SLOT_STEP_MIN }).find((s) => s.available);
