@@ -66,6 +66,8 @@ describe("configuración de producción", () => {
     MP_CLIENT_ID: "6048",
     MP_CLIENT_SECRET: "secreto",
     MP_WEBHOOK_SECRET: "firma",
+    EVOLUTION_URL: "http://whatsapp:8080",
+    EVOLUTION_API_KEY: "clave",
   };
 
   it("una configuración completa arranca sin errores ni avisos", () => {

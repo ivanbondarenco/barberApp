@@ -189,8 +189,11 @@ const OWNER_COMMANDS = new Set<Command["type"]>([
   "demo.reset",
 ]);
 
-/** El webhook de la pasarela solo acredita señas; no puede hacer nada más. */
-const SYSTEM_COMMANDS = new Set<Command["type"]>(["appointment.deposit"]);
+/**
+ * El webhook de la pasarela solo acredita señas, y el envío automático de recordatorios por
+ * WhatsApp solo marca el turno como avisado. El sistema no puede hacer nada más.
+ */
+const SYSTEM_COMMANDS = new Set<Command["type"]>(["appointment.deposit", "appointment.reminderSent"]);
 
 function assertAllowed(actor: Actor, type: Command["type"]) {
   if (actor.role === "admin") return;

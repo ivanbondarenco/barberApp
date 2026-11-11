@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { needsReminder, pendingReminders, reminderMessage } from "@/lib/reminders";
+import { needsReminder, pendingReminders, reminderMessage, whatsappReminderText } from "@/lib/reminders";
 import type { Appointment, ClientProfile } from "@/lib/types";
 import { freezeTime, MONDAY_9AM, seedState } from "./support/fixtures";
 
@@ -103,5 +103,37 @@ describe("cola de recordatorios", () => {
     expect(text).toContain("08:00");
     expect(text).toContain("Corte a tijera");
     expect(text).toContain("seña");
+  });
+
+  describe("recordatorio automático por WhatsApp", () => {
+    const info = { name: "D.S Studio", address: "Av. Siempreviva 742" };
+    const textFor = (overrides: Partial<Appointment>) =>
+      whatsappReminderText(pendingReminders([appointment(overrides)], clients)[0], info, "Nicolás Paz");
+
+    it("dice que es mañana, la hora, el local, el barbero y lo que ya pagó", () => {
+      const text = textFor({});
+      expect(text).toContain("Hola Tomás!");
+      expect(text).toContain("mañana");
+      expect(text).toContain("a las 08:00 hs en D.S Studio con Nicolás");
+      expect(text).toContain("Ya abonaste $4.750 de seña: te quedan $4.750 para pagar en el local.");
+      expect(text).toContain("Av. Siempreviva 742");
+      expect(text).toContain("Mensaje automático de BarberApp");
+    });
+
+    it("avisa la seña pendiente con el monto", () => {
+      const text = textFor({ deposit: { amount: 4750, status: "pendiente", method: "efectivo" } });
+      expect(text).toContain("Te queda pendiente la seña de $4.750");
+      expect(text).toContain("Total del turno: $9.500");
+    });
+
+    it("sin seña, dice cuánto paga en el local", () => {
+      expect(textFor({ deposit: { amount: 0, status: "pendiente", method: "efectivo" } })).toContain(
+        "Total a pagar en el local: $9.500.",
+      );
+    });
+
+    it("un turno de hoy dice hoy", () => {
+      expect(textFor({ date: "2026-09-14", time: "18:00" })).toContain("Te recordamos que hoy");
+    });
   });
 });

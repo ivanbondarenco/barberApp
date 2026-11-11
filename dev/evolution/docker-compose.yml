@@ -1,0 +1,47 @@
+# Evolution API para PROBAR los recordatorios de WhatsApp en la PC (Docker Desktop).
+# Producción va en el VPS: ver deploy/WHATSAPP.md.
+#   docker compose up -d        → levantar
+#   http://localhost:8090/manager → panel (entrar con AUTHENTICATION_API_KEY de .env)
+#   docker compose down         → apagar (la sesión de WhatsApp queda guardada en el volumen)
+name: barberapp-evolution
+
+services:
+  whatsapp:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    depends_on: [whatsapp-db]
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment:
+      SERVER_URL: http://localhost:8090
+      AUTHENTICATION_API_KEY: ${AUTHENTICATION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${WA_DB_PASSWORD}@whatsapp-db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: barberapp
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      CONFIG_SESSION_PHONE_CLIENT: BarberApp
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      LOG_LEVEL: ERROR,WARN
+    volumes:
+      - whatsapp-instances:/evolution/instances
+
+  whatsapp-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${WA_DB_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - whatsapp-db:/var/lib/postgresql/data
+
+volumes:
+  whatsapp-instances:
+  whatsapp-db:

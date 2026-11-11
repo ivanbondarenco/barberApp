@@ -8,6 +8,12 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { checkProductionConfig } = await import("./server/startup");
   checkProductionConfig();
+  // Recordatorios del día anterior por WhatsApp. Sin EVOLUTION_URL no hace nada.
+  const { startReminderWorker } = await import("./server/reminder-worker");
+  startReminderWorker();
+  // Respaldo del webhook de Mercado Pago: acredita señas cuya notificación se perdió.
+  const { startOrderReconciler } = await import("./server/mp-orders");
+  startOrderReconciler();
 }
 
 /** Errores que Next captura por su cuenta (render, rutas): también avisan. */

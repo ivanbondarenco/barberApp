@@ -10,6 +10,7 @@ Usa [Evolution API](https://github.com/EvolutionAPI/evolution-api), un servidor 
 
 | Evento | Quién lo recibe | Texto |
 |---|---|---|
+| **Recordatorio** (implementado): el día anterior, de 9 a 21 h | Cliente | *Hola {nombre}! Te recordamos que mañana {día} tenés turno a las {hora} en {local} con {barbero}…* + seña abonada o pendiente y saldo |
 | El cliente modifica el turno | Barbero del turno | *Tu cliente {nombre} modificó el turno a {día} {hora}* |
 | El barbero modifica el turno | Cliente | *Tu barbero {nombre} modificó tu turno a {día} {hora}* |
 | El barbero cancela el turno | Cliente | *Tu barbero {nombre} te canceló el turno del {día} {hora}* |
@@ -186,9 +187,15 @@ curl -X POST http://127.0.0.1:8080/message/sendText/barberapp \
 
 Si te llega, la conexión está lista.
 
-## 5. Conectarlo con la app (código a implementar)
+## 5. Conectarlo con la app
 
-Lo que falta programar en BarberApp:
+**Ya implementado: recordatorios.** Con `EVOLUTION_URL` y `EVOLUTION_API_KEY` cargadas, la app revisa cada 10 minutos los turnos de las próximas 24 h ([src/server/reminder-worker.ts](../src/server/reminder-worker.ts)) y manda el recordatorio ([src/server/wa-notify.ts](../src/server/wa-notify.ts)):
+
+- solo de 9 a 21 h (hora argentina), de a uno y con 4 a 9 segundos entre mensajes;
+- respeta la preferencia "recordatorio 24 h" del cliente y no avisa reservas de hace menos de 2 h ni las que esperan el pago;
+- al salir, el turno queda marcado como avisado (desaparece de *Recordatorios* en el panel) y sale también el mail.
+
+Lo que falta programar para los avisos de cambios de turno:
 
 1. **`src/server/wa-notify.ts`**: una función `notifyWhatsapp(phone, text)` que:
    - Si falta `EVOLUTION_URL`, no hace nada (igual que el push sin claves VAPID).

@@ -74,6 +74,9 @@ export function productionConfig(env: Env = process.env): ConfigReport {
   if (!env.VAPID_PUBLIC_KEY?.trim() || !env.VAPID_PRIVATE_KEY?.trim()) {
     warnings.push("Sin VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no hay avisos push de turnos nuevos. Generalas con `npx web-push generate-vapid-keys`.");
   }
+  if (!env.EVOLUTION_URL?.trim() || !env.EVOLUTION_API_KEY?.trim()) {
+    warnings.push("Sin EVOLUTION_URL y EVOLUTION_API_KEY no salen recordatorios automáticos por WhatsApp: el staff los manda a mano.");
+  }
   if (!env.DATABASE_PATH?.trim()) {
     warnings.push("Sin DATABASE_PATH la base queda en ./data: asegurate de que sea un disco persistente.");
   }
