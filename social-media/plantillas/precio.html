@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>Precio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<!-- El precio en cuatro escenas. ?corte=10.000 &mes=20.000 -->
+<style>
+  .scene { position: absolute; inset: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-side); display: flex; flex-direction: column; justify-content: center; gap: 40px; opacity: 0; }
+  /* Entra con rise y sale con out: la segunda animación gana cuando arranca. */
+  .s1 { animation: rise 500ms var(--ease-out) 0.1s both, out 360ms ease-in 1.7s forwards; }
+  .s2 { animation: rise 500ms var(--ease-out) 2.1s both, out 360ms ease-in 4.0s forwards; }
+  .s3 { animation: rise 500ms var(--ease-out) 4.4s both, out 360ms ease-in 7.0s forwards; }
+  .s4 { animation: rise 500ms var(--ease-out) 7.4s both; }
+  .huge { font-size: 380px; line-height: 0.9; font-weight: 800; letter-spacing: -0.06em; }
+  .box { border-radius: 48px; background: var(--night-soft); border: 3px solid var(--night-line); padding: 44px 48px; }
+  .box .lead { font-size: 38px; }
+  .box b { display: block; margin-top: 8px; font-size: 64px; letter-spacing: -0.03em; }
+  .checks { list-style: none; display: flex; flex-direction: column; gap: 26px; }
+  .checks li { display: flex; gap: 22px; align-items: center; font-size: 46px; font-weight: 700; }
+  .checks li::before { content: "✓"; flex-shrink: 0; width: 60px; height: 60px; border-radius: 50%; background: rgb(110 231 183 / 0.15); color: var(--mint-glow); display: grid; place-items: center; font-size: 32px; font-weight: 800; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="signature fade"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+
+  <div class="scene s1">
+    <p class="caps">La pregunta del millón</p>
+    <h1 class="display">¿Cuánto <span class="accent">sale?</span></h1>
+  </div>
+
+  <div class="scene s2">
+    <div><span class="eyebrow">Sin tarjeta</span></div>
+    <p class="huge">$0</p>
+    <h2 class="title">el primer mes.</h2>
+  </div>
+
+  <div class="scene s3">
+    <p class="caps">Después</p>
+    <h1 class="display">Lo que salen <span class="accent">2 cortes</span> por mes.</h1>
+    <div class="box">
+      <p class="lead">Si tu corte sale $<span data-p="corte">10.000</span></p>
+      <b>pagás $<span data-p="mes">20.000</span> / mes</b>
+    </div>
+  </div>
+
+  <div class="scene s4">
+    <h1 class="title">Y nada más.</h1>
+    <ul class="checks">
+      <li>Sin comisión por turno</li>
+      <li>Sin comisión por seña</li>
+      <li>Todo tu equipo incluido</li>
+      <li>Pagás por transferencia, MP o efectivo</li>
+    </ul>
+  </div>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>Notificaciones</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<!-- Pantalla bloqueada recibiendo turnos y señas. ?titulo= &n1t= &n1b= ... &n4t= &n4b= -->
+<style>
+  .stage { gap: 44px; justify-content: center; }
+  .title { font-size: 80px; }
+  .phone { width: 858px; border-radius: 64px; background: var(--night-soft); border: 4px solid var(--night-line); padding: 60px 34px; display: flex; flex-direction: column; align-items: center; animation-delay: 200ms; }
+  .clock { font-size: 160px; font-weight: 800; letter-spacing: -0.05em; line-height: 1; }
+  .date { margin-top: 12px; font-size: 32px; font-weight: 700; color: var(--night-muted); }
+  .list { margin-top: 48px; width: 100%; display: flex; flex-direction: column; gap: 18px; }
+  .n { display: flex; gap: 22px; padding: 24px 26px; border-radius: 36px; background: rgb(255 255 255 / 0.95); color: var(--ink); }
+  .n img { width: 72px; height: 72px; border-radius: 18px; flex-shrink: 0; }
+  .n > div { flex: 1; min-width: 0; }
+  .n .meta { font-size: 21px; font-weight: 800; letter-spacing: 0.06em; color: var(--secondary); display: flex; justify-content: space-between; }
+  .n .meta em { font-style: normal; letter-spacing: 0; font-weight: 600; }
+  .n b { display: block; margin-top: 4px; font-size: 29px; letter-spacing: -0.01em; }
+  .n span { display: block; margin-top: 2px; font-size: 25px; color: var(--secondary); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="signature fade"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+  <h1 class="title" data-p="titulo" data-words data-start="100" data-step="120">Mientras cortás, *la agenda se llena.*</h1>
+  <div class="phone rise">
+    <div class="clock">11:42</div>
+    <div class="date">sábado 14 de noviembre</div>
+    <div class="list">
+      <div class="n slide" style="animation-delay:1.2s"><img src="../marca/logo-sello.svg" alt=""><div><p class="meta">BARBERAPP<em>ahora</em></p><b data-p="n1t">Nuevo turno · Martín G.</b><span data-p="n1b">Corte + barba · hoy 16:30 con Lucas</span></div></div>
+      <div class="n slide" style="animation-delay:2.4s"><img src="../marca/logo-sello.svg" alt=""><div><p class="meta">BARBERAPP<em>ahora</em></p><b data-p="n2t">Seña recibida · $4.000</b><span data-p="n2b">Entró a tu Mercado Pago</span></div></div>
+      <div class="n slide" style="animation-delay:3.6s"><img src="../marca/logo-sello.svg" alt=""><div><p class="meta">BARBERAPP<em>ahora</em></p><b data-p="n3t">Nuevo turno · Fede L.</b><span data-p="n3b">Fade · mañana 10:00 con Maxi</span></div></div>
+      <div class="n slide" style="animation-delay:4.8s"><img src="../marca/logo-sello.svg" alt=""><div><p class="meta">BARBERAPP<em>ahora</em></p><b data-p="n4t">Sumó un producto · Cera mate</b><span data-p="n4b">Lo retira en el sillón</span></div></div>
+    </div>
+  </div>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

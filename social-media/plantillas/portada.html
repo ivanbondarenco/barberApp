@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>Portada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<!--
+  Portada (cover) de un video: se ve en la grilla del perfil, recortada a 3:4 al centro.
+  Por eso todo el texto vive en la franja central. ?serie= &num= &titulo= (con *acento*)
+-->
+<style>
+  .stage { justify-content: center; padding-top: 0; padding-bottom: 0; }
+  .crop { display: flex; flex-direction: column; gap: 40px; }
+  .row { display: flex; align-items: center; gap: 20px; }
+  .num { font-size: 40px; font-weight: 800; color: var(--accent); }
+  .title { font-size: 104px; line-height: 1.02; }
+  .foot { display: flex; align-items: center; gap: 18px; font-size: 34px; font-weight: 800; color: var(--night-muted); }
+  .foot img { width: 64px; height: 64px; }
+  .rule { width: 140px; height: 14px; border-radius: 99px; background: var(--primary-bright); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="crop">
+    <div class="row"><span class="eyebrow" data-p="serie">Barbería en orden</span><span class="num mono" data-p="num">#01</span></div>
+    <h1 class="title" data-p="titulo">Chau <span class="accent">cuaderno</span> de turnos</h1>
+    <div class="rule"></div>
+    <div class="foot"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+  </div>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

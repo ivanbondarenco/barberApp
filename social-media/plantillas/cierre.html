@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<title>Cierre</title>
+<!-- Placa final de todos los videos. ?titulo= &sub= &boton= &pie= -->
+<style>
+  .stage { gap: 0; }
+  .seal { width: 300px; height: 300px; animation-delay: 100ms; filter: drop-shadow(0 40px 80px rgb(37 99 235 / 0.35)); }
+  .name { margin-top: 44px; font-size: 64px; font-weight: 800; letter-spacing: -0.03em; animation-delay: 350ms; }
+  .title { margin-top: 90px; animation-delay: 650ms; }
+  .lead { margin-top: 28px; animation-delay: 900ms; }
+  .cta { margin-top: 80px; animation: pop 460ms var(--ease-pop) 1.2s both, pulse 1.4s ease-in-out 2s infinite; }
+  .foot { margin-top: 40px; font-size: 32px; font-weight: 700; color: var(--night-muted); animation-delay: 1.5s; }
+</style>
+</head>
+<body>
+<div class="stage center">
+  <img class="seal pop" src="../marca/logo-sello.svg" alt="">
+  <p class="name rise">BarberApp</p>
+  <h1 class="title rise" data-p="titulo">Probala <span class="accent">1 mes gratis</span></h1>
+  <p class="lead rise" data-p="sub">Tu barbería, una sola agenda.</p>
+  <div class="cta" data-p="boton">Link en la bio →</div>
+  <p class="foot rise" data-p="pie">Sin tarjeta · Android, iPhone y compu</p>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>Historia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<!--
+  Historia para destacados (1080 × 1920, PNG).
+  ?tipo=tapa|punto|lista|pregunta|cta
+   tapa:     &icono= &etiqueta= &titulo= &sub=
+   punto:    &icono= &num= &titulo= &texto= &chips=a|b|c
+   lista:    &etiqueta= &titulo= &items=a|b|c
+   pregunta: &pregunta= &respuesta=
+   cta:      &titulo= &sub= &flecha=
+  Zona segura de historias: 250 px arriba (barra y perfil) y 360 px abajo (responder).
+-->
+<style>
+  .stage { padding: 250px 80px 360px; justify-content: center; gap: 44px; }
+  [class^="t-"], [class*=" t-"] { display: none; }
+  body[data-tipo="tapa"] .t-tapa, body[data-tipo="punto"] .t-punto, body[data-tipo="lista"] .t-lista,
+  body[data-tipo="pregunta"] .t-pregunta, body[data-tipo="cta"] .t-cta { display: flex; }
+  .block { flex-direction: column; gap: 44px; }
+  h1:empty, p:empty, span:empty, ul:empty { display: none !important; }
+
+  .signature { top: auto; bottom: 250px; left: 80px; font-size: 30px; opacity: 0.75; }
+  .signature img { width: 48px; height: 48px; }
+
+  .ico { width: 200px; height: 200px; border-radius: 52px; background: var(--night-soft); border: 3px solid var(--night-line); color: var(--accent); display: grid; place-items: center; }
+  .ico svg { width: 104px; height: 104px; }
+  .ico.is-seal { background: none; border: 0; }
+  .ico.is-seal img { width: 200px; height: 200px; }
+  .t-tapa .ico { width: 260px; height: 260px; border-radius: 68px; }
+  .t-tapa .ico svg { width: 136px; height: 136px; }
+  .t-tapa .ico.is-seal img { width: 260px; height: 260px; }
+
+  .num { font-size: 44px; font-weight: 800; color: var(--accent); }
+  .head { display: flex; align-items: center; gap: 32px; }
+  .display { font-size: 112px; }
+  .title { font-size: 92px; }
+  .text { font-size: 50px; line-height: 1.32; font-weight: 500; color: var(--night-muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 16px; list-style: none; }
+  .chips li { padding: 14px 28px; border-radius: 999px; background: rgb(110 231 183 / 0.14); color: var(--mint-glow); font-size: 32px; font-weight: 800; }
+  .checks { list-style: none; display: flex; flex-direction: column; gap: 30px; }
+  .checks li { display: flex; gap: 26px; align-items: center; font-size: 48px; font-weight: 700; line-height: 1.2; }
+  .checks li::before { content: "✓"; flex-shrink: 0; width: 68px; height: 68px; border-radius: 50%; background: rgb(110 231 183 / 0.15); color: var(--mint-glow); display: grid; place-items: center; font-size: 36px; font-weight: 800; }
+
+  .q { border-radius: 48px; background: var(--white); color: var(--ink); padding: 52px 56px; font-size: 64px; font-weight: 800; line-height: 1.12; letter-spacing: -0.03em; }
+  .a { font-size: 52px; line-height: 1.35; font-weight: 500; color: var(--white); }
+  .a-row { display: flex; gap: 28px; align-items: flex-start; }
+  .a-row::before { content: ""; flex-shrink: 0; width: 10px; align-self: stretch; border-radius: 5px; background: var(--primary-bright); }
+
+  .t-cta { align-items: center; text-align: center; }
+  .t-cta .seal { width: 220px; height: 220px; }
+  .t-cta .title { font-size: 100px; }
+  .arrow { margin-top: 30px; display: flex; flex-direction: column; align-items: center; gap: 18px; font-size: 38px; font-weight: 800; color: var(--accent); }
+  .arrow svg { width: 72px; height: 72px; }
+  .slot { width: 640px; height: 150px; }
+</style>
+</head>
+<body data-tipo="tapa">
+<div class="stage">
+  <div class="block t-tapa">
+    <div class="ico" data-icono></div>
+    <div><span class="eyebrow" data-p="etiqueta"></span></div>
+    <h1 class="display" data-p="titulo"></h1>
+    <p class="text" data-p="sub"></p>
+  </div>
+
+  <div class="block t-punto">
+    <div class="head"><div class="ico" data-icono></div><span class="num mono" data-p="num"></span></div>
+    <h1 class="title" data-p="titulo"></h1>
+    <p class="text" data-p="texto"></p>
+    <ul class="chips" data-list="chips"></ul>
+  </div>
+
+  <div class="block t-lista">
+    <div><span class="eyebrow" data-p="etiqueta"></span></div>
+    <h1 class="title" data-p="titulo"></h1>
+    <ul class="checks" data-list="items"></ul>
+  </div>
+
+  <div class="block t-pregunta">
+    <p class="caps">Pregunta frecuente</p>
+    <p class="q" data-p="pregunta"></p>
+    <div class="a-row"><p class="a" data-p="respuesta"></p></div>
+  </div>
+
+  <div class="block t-cta">
+    <img class="seal" src="../marca/logo-sello.svg" alt="">
+    <h1 class="title" data-p="titulo">Probala <span class="accent">1 mes gratis</span></h1>
+    <p class="text" data-p="sub">Sin tarjeta. Tu barbería lista hoy.</p>
+    <div class="arrow"><span data-p="flecha">Tocá el enlace</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></div>
+    <div class="slot"></div>
+  </div>
+</div>
+<div class="signature"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

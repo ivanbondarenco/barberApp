@@ -16,3 +16,6 @@ coverage/
 .env.production
 /backups
 /backups.tmp
+
+# Redes: videos e imágenes generados (se regeneran con `node social-media/render.mjs`).
+/social-media/export/

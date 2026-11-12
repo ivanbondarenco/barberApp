@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<title>Gancho</title>
+<!-- Gancho de los primeros 3 segundos. ?tag= &texto= (con *acento* y | para cortar línea) &sub= -->
+<style>
+  .stage { justify-content: center; gap: 56px; }
+  .display { font-size: 124px; }
+  .bar { width: 160px; height: 14px; border-radius: 99px; background: var(--primary-bright); transform-origin: left; animation: strike 500ms var(--ease-out) 1.6s both; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="signature fade"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+  <div><span class="eyebrow pop" data-p="tag">Para barberos</span></div>
+  <h1 class="display" data-p="texto" data-words data-start="250" data-step="150">¿Seguís anotando turnos en un *cuaderno?*</h1>
+  <div class="bar"></div>
+  <p class="lead rise" style="animation-delay:1.9s" data-p="sub">Mirá esto antes de abrir el próximo sábado.</p>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

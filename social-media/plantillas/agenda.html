@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>Agenda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<!-- La agenda del día llenándose sola. ?titulo= &pie= -->
+<style>
+  .stage { gap: 44px; justify-content: center; }
+  .title { font-size: 80px; }
+  .phone { width: 858px; border-radius: 64px; background: var(--white); color: var(--ink); padding: 40px 32px; box-shadow: 0 50px 120px -30px rgb(0 0 0 / 0.6); animation-delay: 300ms; display: flex; flex-direction: column; }
+  .bar { display: flex; align-items: baseline; justify-content: space-between; }
+  .bar b { font-size: 44px; letter-spacing: -0.03em; }
+  .bar span { font-size: 26px; color: var(--secondary); font-weight: 700; }
+  .grid { margin-top: 24px; display: grid; grid-template-columns: 88px repeat(3, 1fr); gap: 14px; }
+  .head { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 800; padding-bottom: 6px; }
+  .av { width: 44px; height: 44px; border-radius: 50%; background: var(--primary-fixed); color: var(--primary); display: grid; place-items: center; font-size: 19px; }
+  .hour { font-size: 22px; color: var(--secondary); padding-top: 18px; }
+  .slot { height: 140px; border-radius: 22px; border: 3px dashed var(--surface-highest); position: relative; }
+  .appt { position: absolute; inset: -3px; border-radius: 22px; background: var(--surface-low); padding: 14px 14px 14px 18px; border-left: 8px solid var(--primary-bright); }
+  .appt p { font-size: 24px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .appt small { display: block; font-size: 20px; color: var(--secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .appt .chip { margin-top: 10px; font-size: 17px; padding: 4px 12px; white-space: nowrap; }
+  .total { display: flex; justify-content: center; animation-delay: 5.6s; }
+  .total .chip { font-size: 30px; padding: 14px 28px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="signature fade"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+  <h1 class="title" data-p="titulo" data-words data-start="100" data-step="120">Así se llena tu agenda *sola.*</h1>
+  <div class="phone rise">
+    <div class="bar"><b>Hoy</b><span>sábado · 3 barberos</span></div>
+    <div class="grid">
+      <div></div>
+      <div class="head"><span class="av">LU</span>Lucas</div>
+      <div class="head"><span class="av">MA</span>Maxi</div>
+      <div class="head"><span class="av">TO</span>Tomi</div>
+
+      <div class="hour mono">10:00</div>
+      <div class="slot"><div class="appt pop" style="animation-delay:1.0s"><p>Martín G.</p><small>Corte + barba</small><span class="chip ok">Seña pagada</span></div></div>
+      <div class="slot"></div>
+      <div class="slot"><div class="appt pop" style="animation-delay:2.6s"><p>Nico R.</p><small>Fade</small><span class="chip ok">Seña pagada</span></div></div>
+
+      <div class="hour mono">11:00</div>
+      <div class="slot"><div class="appt pop" style="animation-delay:3.4s"><p>Joaco P.</p><small>Corte</small><span class="chip wait">A verificar</span></div></div>
+      <div class="slot"><div class="appt pop" style="animation-delay:1.6s"><p>Fede L.</p><small>Corte + barba</small><span class="chip ok">Seña pagada</span></div></div>
+      <div class="slot"></div>
+
+      <div class="hour mono">12:00</div>
+      <div class="slot"></div>
+      <div class="slot"><div class="appt pop" style="animation-delay:4.0s"><p>Bruno S.</p><small>Perfilado</small><span class="chip ok">Seña pagada</span></div></div>
+      <div class="slot"><div class="appt pop" style="animation-delay:2.1s"><p>Santi M.</p><small>Corte niño</small><span class="chip ok">Seña pagada</span></div></div>
+
+      <div class="hour mono">13:00</div>
+      <div class="slot"><div class="appt pop" style="animation-delay:4.6s"><p>Ramiro T.</p><small>Color</small><span class="chip ok">Seña pagada</span></div></div>
+      <div class="slot"><div class="appt pop" style="animation-delay:5.0s"><p>Agus D.</p><small>Corte</small><span class="chip ok">Seña pagada</span></div></div>
+      <div class="slot"></div>
+    </div>
+  </div>
+  <div class="total rise"><span class="chip ok" data-p="pie">8 turnos · sin un solo WhatsApp</span></div>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

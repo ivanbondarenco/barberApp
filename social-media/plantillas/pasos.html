@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>Cómo empezar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=block" rel="stylesheet">
+<link rel="stylesheet" href="marca.css">
+<!-- Tres pasos para empezar hoy. ?titulo= &link= (poné el dominio real) -->
+<style>
+  .stage { gap: 36px; justify-content: center; }
+  .title { font-size: 88px; }
+  .card { display: flex; gap: 32px; align-items: flex-start; border-radius: 44px; background: var(--night-soft); border: 3px solid var(--night-line); padding: 40px 44px; }
+  .card .n { font-size: 34px; font-weight: 800; color: var(--accent); padding-top: 6px; }
+  .card b { display: block; font-size: 50px; letter-spacing: -0.03em; }
+  .card span { display: block; margin-top: 8px; font-size: 34px; line-height: 1.3; color: var(--night-muted); }
+  .link { margin-top: 12px; display: flex; align-items: center; gap: 20px; border-radius: 999px; background: var(--white); color: var(--ink); padding: 26px 40px; font-size: 36px; font-weight: 800; animation-delay: 3.9s; align-self: flex-start; }
+  .link i { font-style: normal; color: var(--primary); }
+  .time { animation-delay: 4.5s; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="signature fade"><img src="../marca/logo-sello.svg" alt="">BarberApp</div>
+  <h1 class="title" data-p="titulo" data-words data-start="100" data-step="120">Hoy la creás. *Hoy* recibís turnos.</h1>
+  <div class="card rise" style="animation-delay:1.3s"><span class="n mono">01</span><div><b>Creá tu barbería</b><span>Nombre, dirección y WhatsApp.</span></div></div>
+  <div class="card rise" style="animation-delay:2.1s"><span class="n mono">02</span><div><b>Cargá servicios y equipo</b><span>Precios, duración y horarios de cada barbero.</span></div></div>
+  <div class="card rise" style="animation-delay:2.9s"><span class="n mono">03</span><div><b>Compartí tu link</b><span>En Instagram, WhatsApp o un QR en el local.</span></div></div>
+  <div class="link pop"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary);flex-shrink:0"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span data-p="link">tudominio.com/b/tu-barberia</span></div>
+  <p class="lead rise time">Te lleva menos que un fade.</p>
+</div>
+<script src="plantilla.js"></script>
+</body>
+</html>

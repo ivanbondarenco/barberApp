@@ -1,0 +1,169 @@
+/*
+ * BarberApp · marca para video vertical (1080 × 1920, 9:16).
+ * Los mismos tokens de la app (src/app/globals.css), llevados a tamaño de pantalla de celular.
+ * Sin negro puro, sin dorados, sin degradados.
+ */
+:root {
+  --night: #0a1020;
+  --night-soft: #121a2e;
+  --night-line: #1e2842;
+  --night-muted: #a3aec7;
+  --accent: #8faeff;
+  --primary: #1d4ed8;
+  --primary-bright: #2563eb;
+  --primary-fixed: #dce1ff;
+  --ink: #101c36;
+  --secondary: #545f73;
+  --surface: #f8f9ff;
+  --surface-low: #f0f3ff;
+  --surface-container: #e5eeff;
+  --surface-highest: #d3e4fe;
+  --white: #ffffff;
+  --mint: #e3f7ee;
+  --mint-ink: #0f7a55;
+  --mint-glow: #6ee7b7;
+  --amber: #fdeed3;
+  --amber-ink: #8a5a00;
+  --error: #ff8a80;
+
+  /* Zona segura: lo que no tapan los botones de Reels / TikTok / Shorts. */
+  --safe-top: 220px;
+  --safe-bottom: 440px;
+  --safe-side: 72px;
+  --safe-right: 150px;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 1080px;
+  height: 1920px;
+  overflow: hidden;
+  background: var(--night);
+  color: var(--white);
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.stage {
+  position: relative;
+  width: 1080px;
+  height: 1920px;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-side);
+  display: flex;
+  flex-direction: column;
+}
+.stage.light { background: var(--surface); color: var(--ink); }
+.stage.center { align-items: center; justify-content: center; text-align: center; }
+
+/* Firma chica arriba: siempre presente, nunca protagonista. */
+.signature {
+  position: absolute;
+  top: 120px;
+  left: var(--safe-side);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-weight: 800;
+  font-size: 34px;
+  letter-spacing: -0.02em;
+  opacity: 0.9;
+}
+.signature img { width: 56px; height: 56px; }
+.light .signature { color: var(--ink); }
+
+/* Tipografía */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 28px;
+  border-radius: 999px;
+  background: rgb(110 231 183 / 0.14);
+  color: var(--mint-glow);
+  font-size: 32px;
+  font-weight: 800;
+}
+.eyebrow::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.display {
+  font-size: 118px;
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+.title {
+  font-size: 84px;
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+.lead {
+  font-size: 42px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: var(--night-muted);
+}
+.light .lead { color: var(--secondary); }
+.accent { color: var(--accent); }
+.light .accent { color: var(--primary); }
+.caps {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+
+/* Botón CTA */
+.cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 132px;
+  padding: 0 72px;
+  border-radius: 40px;
+  background: var(--primary-bright);
+  color: var(--white);
+  font-size: 46px;
+  font-weight: 800;
+  box-shadow: 0 24px 60px -16px rgb(37 99 235 / 0.7);
+}
+
+/* Chips de estado, como en la agenda real */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 22px;
+  font-weight: 800;
+}
+.chip.ok { background: var(--mint); color: var(--mint-ink); }
+.chip.wait { background: var(--amber); color: var(--amber-ink); }
+
+/* Animaciones de marca: entran rápido, se asientan suave. Nada rebota más de una vez. */
+.rise   { opacity: 0; animation: rise 520ms var(--ease-out) forwards; }
+.pop    { opacity: 0; animation: pop 460ms var(--ease-pop) forwards; }
+.fade   { opacity: 0; animation: fade 400ms ease-out forwards; }
+.slide  { opacity: 0; animation: slide 520ms var(--ease-out) forwards; }
+.out    { animation: out 360ms ease-in forwards; }
+
+@keyframes rise  { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: none; } }
+@keyframes pop   { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: none; } }
+@keyframes fade  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide { from { opacity: 0; transform: translateY(-80px); } to { opacity: 1; transform: none; } }
+@keyframes out   { to { opacity: 0; transform: translateY(-40px); } }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes strike { from { transform: scaleX(0); } to { transform: scaleX(1); } }
