@@ -3,7 +3,6 @@
 import { CalendarCheck, CalendarPlus, Store, UserRound } from "lucide-react";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useClientAppointments } from "@/components/appointments/useClientAppointments";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AppShell } from "@/components/layout/AppShell";
 import type { NavItem } from "@/components/layout/BottomNav";
@@ -27,14 +26,14 @@ function routeMeta(pathname: string, hasShop: boolean): { title: string; backHre
 function ClientFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const hasShop = useAppStore((s) => !!s.session?.shop);
-  const { upcoming } = useClientAppointments();
   const meta = routeMeta(pathname, hasShop);
 
   // Sin barbería no hay nada que reservar ni comprar: solo la pantalla para elegir.
+  // "Turnos" va sin contador: un número rojo se lee como avisos sin leer, no como turnos agendados.
   const items: NavItem[] | undefined = hasShop
     ? [
         { href: "/cliente/reservar", label: "Reservar", icon: CalendarPlus, match: ["/cliente/pago"] },
-        { href: "/cliente/mis-turnos", label: "Turnos", icon: CalendarCheck, badge: upcoming.length, match: ["/cliente/turno"] },
+        { href: "/cliente/mis-turnos", label: "Turnos", icon: CalendarCheck, match: ["/cliente/turno"] },
         { href: "/cliente/tienda", label: "Tienda", icon: Store },
         { href: "/cliente/perfil", label: "Perfil", icon: UserRound, match: ["/cliente/historial", CLIENT_SHOPS_PATH] },
       ]

@@ -13,10 +13,16 @@ import { uid } from "@/lib/format";
 import type { Product, ProductShape } from "@/lib/types";
 import { deleteProduct, saveProduct } from "@/store/actions";
 
+/** "$ 11.000" → "11000": se acepta el precio como se escribe en Argentina. */
+const cleanPrice = (v: string) => v.replace(/[\s.$]/g, "");
+
 const schema = z.object({
   name: z.string().trim().min(3, "Mínimo 3 caracteres").max(40),
   subtitle: z.string().trim().max(50),
-  price: z.string().regex(/^\d+$/, "Solo números").refine((v) => Number(v) >= 100, "Mínimo $100"),
+  price: z
+    .string()
+    .refine((v) => /^\d+$/.test(cleanPrice(v)), "Ingresá solo números")
+    .refine((v) => Number(cleanPrice(v)) >= 100, "Mínimo $100"),
   size: z.string().trim().min(1, "Ej: 100g"),
   stock: z.number().int().min(0),
   category: z.enum(["ceras", "barba", "afeitado", "cuidado"]),
@@ -60,7 +66,7 @@ export function ProductFormSheet({ open, product, onClose }: { open: boolean; pr
   const [stock, shape, active] = useWatch({ control, name: ["stock", "shape", "active"] });
 
   const onSubmit = async (v: Values) => {
-    const result = await saveProduct({ ...v, id: product?.id ?? uid("p"), price: Number(v.price) }, isNew);
+    const result = await saveProduct({ ...v, id: product?.id ?? uid("p"), price: Number(cleanPrice(v.price)) }, isNew);
     if (result.ok) onClose();
   };
 
@@ -113,14 +119,27 @@ export function ProductFormSheet({ open, product, onClose }: { open: boolean; pr
           </Field>
         </div>
         <div className="divide-y divide-surface-high rounded-2xl bg-surface-low">
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-sm font-medium">Stock</span>
-            <div className="flex items-center gap-3">
-              <button type="button" aria-label="Restar stock" onClick={() => setValue("stock", Math.max(0, (stock ?? 0) - 1))} className="tap flex h-10 w-10 items-center justify-center rounded-full bg-surface-lowest">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <label htmlFor="pr-stock" className="text-sm font-medium">
+              Stock
+            </label>
+            {/* Se puede escribir la cantidad (al reponer una caja) o ajustarla de a uno. */}
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label="Restar stock" onClick={() => setValue("stock", Math.max(0, (stock ?? 0) - 1), { shouldDirty: true })} className="tap flex h-11 w-11 items-center justify-center rounded-full bg-surface-lowest">
                 <Minus size={16} />
               </button>
-              <span className="w-8 text-center text-base font-bold tabular-nums">{stock ?? 0}</span>
-              <button type="button" aria-label="Sumar stock" onClick={() => setValue("stock", (stock ?? 0) + 1)} className="tap flex h-10 w-10 items-center justify-center rounded-full bg-primary text-on-primary">
+              <input
+                id="pr-stock"
+                inputMode="numeric"
+                className="field min-h-11 w-16 px-1 text-center text-base font-bold tabular-nums"
+                value={String(stock ?? 0)}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, "").slice(0, 5);
+                  setValue("stock", digits ? Number(digits) : 0, { shouldDirty: true });
+                }}
+                onFocus={(e) => e.target.select()}
+              />
+              <button type="button" aria-label="Sumar stock" onClick={() => setValue("stock", (stock ?? 0) + 1, { shouldDirty: true })} className="tap flex h-11 w-11 items-center justify-center rounded-full bg-primary text-on-primary">
                 <Plus size={16} />
               </button>
             </div>

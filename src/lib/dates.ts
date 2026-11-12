@@ -43,12 +43,32 @@ export function openDaysFrom(startISO: string, count: number): string[] {
   return days;
 }
 
-/** Lunes a Sábado de la semana que contiene `iso` (desplazada `weekOffset` semanas). */
-export function workWeek(iso: string, weekOffset = 0): string[] {
+/**
+ * Lunes a Sábado de la semana que contiene `iso` (desplazada `weekOffset` semanas).
+ * Con `includeSunday` suma el domingo, para los locales que abren ese día.
+ */
+export function workWeek(iso: string, weekOffset = 0, includeSunday = false): string[] {
   const d = fromISODate(iso);
   const dow = d.getDay() === 0 ? 7 : d.getDay();
   const monday = addDays(iso, 1 - dow + weekOffset * 7);
-  return Array.from({ length: 6 }, (_, i) => addDays(monday, i));
+  return Array.from({ length: includeSunday ? 7 : 6 }, (_, i) => addDays(monday, i));
+}
+
+/** Todos los días entre `from` y `to`, inclusive. */
+export function daysBetween(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (let d = from; d <= to && days.length < 400; d = addDays(d, 1)) days.push(d);
+  return days;
+}
+
+/** "2 al 8 de Noviembre" / "30 de Octubre al 5 de Noviembre". */
+export function rangeLabel(from: string, to: string): string {
+  const a = fromISODate(from);
+  const b = fromISODate(to);
+  if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) {
+    return `${a.getDate()} al ${b.getDate()} de ${MONTH_LONG[b.getMonth()]}`;
+  }
+  return `${a.getDate()} de ${MONTH_LONG[a.getMonth()]} al ${b.getDate()} de ${MONTH_LONG[b.getMonth()]}`;
 }
 
 /** Primer y último día del mes que contiene `iso`, en formato ISO. */

@@ -1,7 +1,7 @@
 "use client";
 
 import * as m from "motion/react-m";
-import { CalendarPlus, CreditCard, History, MessageCircle, RefreshCw, UserRoundPlus } from "lucide-react";
+import { CalendarPlus, CloudOff, Copy, CreditCard, History, MessageCircle, RefreshCw, UserRoundPlus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -10,13 +10,14 @@ import { NAV } from "@/components/motion/Page";
 import { SuccessCheck } from "@/components/motion/SuccessCheck";
 import { EmptyState, SkeletonList } from "@/components/ui/States";
 import { downloadAppointmentIcs } from "@/lib/calendar";
-import { dayNumber, dayShort, longDate, toISODate } from "@/lib/dates";
+import { dayNumber, dayShort, longDate, monthShort, toISODate } from "@/lib/dates";
 import { money, whatsappLink } from "@/lib/format";
+import { forgetGuestBooking, guestBookingPath, saveGuestBooking } from "@/lib/guest-contact";
 import { fadeUp } from "@/lib/motion";
-import { CASH_DEPOSIT_DEADLINE_HOURS } from "@/lib/pricing";
 import { cashDepositDeadline } from "@/lib/schedule";
 import type { Appointment, BusinessInfo, Shop } from "@/lib/types";
 import { useAppStore } from "@/store/useAppStore";
+import { useBookingRules } from "@/store/useRules";
 import { toast } from "@/store/useToast";
 
 type GuestAppointment = Pick<
@@ -47,20 +48,44 @@ function ReservaResultado() {
   const turno = params.get("turno") ?? "";
   const token = params.get("t") ?? "";
   const hours = useAppStore((s) => s.businessHours);
+  const rules = useBookingRules();
   const barbers = useAppStore((s) => s.barbers);
+  const shopWhatsapp = useAppStore((s) => s.businessInfo.whatsapp);
   const [data, setData] = useState<GuestBooking | null>(null);
   const [missing, setMissing] = useState(false);
+  /** No se pudo leer la reserva (sin conexión o error del servidor). Solo se muestra si todavía no hay nada. */
+  const [failed, setFailed] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/reservas?turno=${encodeURIComponent(turno)}&t=${encodeURIComponent(token)}`, { cache: "no-store" });
-      if (res.status === 404) return setMissing(true);
-      if (res.ok) setData((await res.json()) as GuestBooking);
+      if (res.status === 404) {
+        forgetGuestBooking(turno);
+        return setMissing(true);
+      }
+      if (!res.ok) return setFailed(true);
+      const booking = (await res.json()) as GuestBooking;
+      setData(booking);
+      setFailed(false);
+      // Queda guardada en el teléfono para volver a verla desde /reservar mientras no pase.
+      const a = booking.appointment;
+      if (a.status === "confirmado") {
+        saveGuestBooking({ id: a.id, token, date: a.date, time: a.time, label: `${dayShort(a.date)} ${dayNumber(a.date)} ${monthShort(a.date)} · ${a.time} hs` });
+      } else {
+        forgetGuestBooking(a.id);
+      }
     } catch {
-      // Sin conexión: se reintenta en el próximo ciclo.
+      // Sin conexión: si ya se mostró la reserva, se reintenta en el próximo ciclo.
+      setFailed(true);
     }
   }, [turno, token]);
+
+  const retry = () => {
+    setFailed(false);
+    void load();
+  };
 
   const appointment = data?.appointment;
   // Volvió de Mercado Pago aprobado pero el webhook todavía no acreditó: se consulta hasta que llegue.
@@ -75,6 +100,25 @@ function ReservaResultado() {
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
   }, [waitingPayment, load]);
+
+  // Mientras el horario está retenido, el tiempo que le queda para pagar se va actualizando.
+  const holdUntil = appointment?.holdUntil;
+  useEffect(() => {
+    if (!holdUntil) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, [holdUntil]);
+
+  const copyLink = async () => {
+    const url = `${window.location.origin}${guestBookingPath({ id: turno, token })}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Link copiado", "success");
+    } catch {
+      toast(url);
+    }
+  };
 
   const pay = async () => {
     setPaying(true);
@@ -97,16 +141,39 @@ function ReservaResultado() {
     setPaying(false);
   };
 
+  // Es también la vuelta de Mercado Pago: "volver" nunca debe meterlo de nuevo en el checkout.
   if (missing) {
     return (
-      <PublicShell title="Tu reserva" fallbackHref="/reservar">
+      <PublicShell title="Tu reserva" backHref="/reservar">
         <EmptyState icon={CalendarPlus} title="No encontramos esta reserva" text="Si ya reservaste, escribile al local para confirmarlo." />
+      </PublicShell>
+    );
+  }
+  if (failed && !data) {
+    return (
+      <PublicShell title="Tu reserva" backHref="/reservar">
+        <EmptyState icon={CloudOff} title="No pudimos cargar tu reserva" text="Revisá tu conexión y probá de nuevo. Tu turno no se pierde." />
+        <div className="flex flex-col gap-2 px-5 pb-6">
+          <button type="button" onClick={retry} className="tap btn-primary">
+            <RefreshCw size={17} /> Reintentar
+          </button>
+          {shopWhatsapp && (
+            <a
+              href={whatsappLink(shopWhatsapp, "Hola, reservé un turno y no puedo ver mi reserva.")}
+              target="_blank"
+              rel="noreferrer"
+              className="tap btn-secondary"
+            >
+              <MessageCircle size={17} /> Escribirle al local
+            </a>
+          )}
+        </div>
       </PublicShell>
     );
   }
   if (!data || !appointment) {
     return (
-      <PublicShell title="Tu reserva" fallbackHref="/reservar">
+      <PublicShell title="Tu reserva" backHref="/reservar">
         <SkeletonList />
       </PublicShell>
     );
@@ -117,8 +184,16 @@ function ReservaResultado() {
   const paid = appointment.deposit.status === "abonada";
   const cancelled = appointment.status !== "confirmado";
   const balance = appointment.servicePrice - (paid ? appointment.deposit.amount : 0);
-  const deadline = cashDepositDeadline(appointment.date, appointment.time, hours, CASH_DEPOSIT_DEADLINE_HOURS);
+  const deadline = cashDepositDeadline(appointment.date, appointment.time, hours, rules.cashDeadlineHours);
   const deadlineText = `${dayShort(toISODate(deadline))} ${dayNumber(toISODate(deadline))} a las ${deadline.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })} hs`;
+  /** Minutos que le quedan al horario retenido mientras paga (null si no hay retención). */
+  const holdLeft = appointment.holdUntil ? Math.max(0, Math.ceil((new Date(appointment.holdUntil).getTime() - now) / 60_000)) : null;
+  const holdText =
+    holdLeft === null
+      ? "Tu horario queda reservado unos minutos más"
+      : holdLeft > 0
+        ? `Tu horario queda reservado ${holdLeft === 1 ? "1 minuto" : `${holdLeft} minutos`} más`
+        : "El plazo para pagar está por vencer";
 
   // El estado de la URL es lo que dijo Mercado Pago al volver; manda lo que diga el turno.
   const state: "exito" | "pendiente" | "error" = cancelled
@@ -151,14 +226,16 @@ function ReservaResultado() {
       title: cancelled ? "La reserva se venció" : "El pago no se completó",
       text: cancelled
         ? "No se acreditó la seña a tiempo y el horario se liberó. Podés reservar de nuevo."
-        : "No se cobró nada. Tu horario queda reservado unos minutos más: podés reintentar el pago.",
+        : `No se cobró nada. ${holdText}: podés reintentar el pago.`,
     },
   }[state];
 
   const canPay = !cancelled && !paid && appointment.deposit.amount > 0 && appointment.deposit.method === "mercadopago";
+  // Con un pago por hacer, el botón importante es pagar: la invitación a la cuenta espera.
+  const showAccount = !cancelled && !canPay && state !== "error";
 
   return (
-    <PublicShell title={data.shop?.name ?? info.name} fallbackHref="/reservar">
+    <PublicShell title={data.shop?.name ?? info.name} backHref="/reservar">
       <div className="flex flex-1 flex-col px-5 pb-5 pt-6">
         <div className="flex flex-col items-center gap-3 text-center">
           <SuccessCheck tone={state === "exito" ? "success" : state === "pendiente" ? "pending" : "error"} />
@@ -191,6 +268,15 @@ function ReservaResultado() {
         )}
 
         {!cancelled && (
+          <div className="mt-3 flex flex-col items-center">
+            <button type="button" onClick={() => void copyLink()} className="text-link text-sm">
+              <Copy size={15} aria-hidden /> Copiar link de mi reserva
+            </button>
+            <p className="text-xs text-secondary">Guardalo para volver a tu reserva.</p>
+          </div>
+        )}
+
+        {showAccount && (
           <m.div
             variants={fadeUp}
             initial="hidden"

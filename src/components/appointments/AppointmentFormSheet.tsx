@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Smartphone, UserRound } from "lucide-react";
+import { Search, Smartphone, UserPlus, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SlotPicker } from "@/components/booking/SlotPicker";
@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { longDate } from "@/lib/dates";
 import { initials, money, onlyDigits, paymentMethodLabel, phoneKey } from "@/lib/format";
-import { splitDeposit } from "@/lib/pricing";
+import { depositPercent, serviceDepositRate, splitDeposit } from "@/lib/pricing";
 import type { Appointment, ClientProfile, PaymentMethod } from "@/lib/types";
 import { bookAppointment, updateAppointment } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
@@ -30,7 +30,10 @@ interface AppointmentFormSheetProps {
 
 const METHODS: PaymentMethod[] = ["efectivo", "mercadopago", "transferencia"];
 
-/** De dónde sale el cliente del turno: de su ficha en la app, o solo un nombre para organizarse. */
+/**
+ * De dónde sale el cliente del turno: una ficha que ya existe (tenga o no la app), o uno nuevo
+ * que se carga con el nombre (y el celular, si lo dicta).
+ */
 type ClientMode = "ficha" | "sin_app";
 
 /** Cuántas fichas se listan de una: con el buscador alcanza para llegar al resto. */
@@ -41,6 +44,9 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
   const services = useAppStore((s) => s.services);
   const barbers = useAppStore((s) => s.barbers);
   const clients = useAppStore((s) => s.clients);
+  const session = useAppStore((s) => s.session);
+  /** El barbero agenda solo en su sillón: el servidor rechaza otro, así que ni se ofrece. */
+  const ownBarberId = session?.role === "barbero" ? session.barberId : undefined;
   const editing = !!appointment;
 
   const [clientMode, setClientMode] = useState<ClientMode>("ficha");
@@ -74,7 +80,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
     setClientName(appointment?.clientName ?? prefill?.clientName ?? "");
     setClientPhone(appointment?.clientPhone ?? prefill?.clientPhone ?? "");
     setServiceId(appointment?.serviceId ?? activeServices[0]?.id ?? "");
-    setBarberId(appointment?.barberId ?? activeBarbers[0]?.id ?? "");
+    setBarberId(appointment?.barberId ?? ownBarberId ?? activeBarbers[0]?.id ?? "");
     setDate(appointment?.date ?? initialDate ?? null);
     setTime(appointment?.time ?? null);
     setNotes(appointment?.notes ?? "");
@@ -120,7 +126,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
     // Con ficha van el id y sus datos; sin app va solo el nombre (y el celular si lo dictó).
     let who: { clientId?: string; clientName: string; clientPhone: string };
     if (clientMode === "ficha") {
-      if (!selected) return setError("Elegí un cliente de la lista o cargalo como cliente sin app");
+      if (!selected) return setError("Elegí un cliente de la lista o cargalo como cliente nuevo");
       who = { clientId: selected.id, clientName: selected.name, clientPhone: selected.phone };
     } else {
       who = { clientName, clientPhone };
@@ -170,8 +176,8 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
               }}
               size="sm"
               options={[
-                { value: "ficha", label: "Cliente de la app" },
-                { value: "sin_app", label: "Cliente sin app" },
+                { value: "ficha", label: "Buscar cliente" },
+                { value: "sin_app", label: "Cliente nuevo" },
               ]}
             />
 
@@ -185,7 +191,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
                     <span className="block truncate text-[15px] font-semibold">{selected.name}</span>
                     <span className="block text-[13px] text-secondary">{selected.phone}</span>
                   </span>
-                  <button type="button" onClick={() => setClientId(null)} className="min-h-10 px-2 text-sm font-semibold text-primary">
+                  <button type="button" onClick={() => setClientId(null)} className="min-h-11 px-2 text-sm font-semibold text-primary">
                     Cambiar
                   </button>
                 </div>
@@ -196,6 +202,14 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
                   results={results}
                   onPick={(c) => {
                     setClientId(c.id);
+                    setError(null);
+                  }}
+                  onCreate={(text) => {
+                    // Lo que se buscó pasa al alta: si eran números, es el celular; si no, el nombre.
+                    const isPhone = onlyDigits(text).length >= 6 && !/[a-záéíóúñ]/i.test(text);
+                    setClientMode("sin_app");
+                    setClientName(isPhone ? "" : text.trim());
+                    setClientPhone(isPhone ? text.trim() : "");
                     setError(null);
                   }}
                 />
@@ -247,7 +261,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className={cn("grid gap-3", ownBarberId ? "grid-cols-1" : "grid-cols-2")}>
           <Field label="Servicio" htmlFor="ap-service">
             <select id="ap-service" className="field px-3" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
               {activeServices.map((s) => (
@@ -257,6 +271,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
               ))}
             </select>
           </Field>
+          {!ownBarberId && (
           <Field label="Barbero" htmlFor="ap-barber">
             <select
               id="ap-barber"
@@ -274,6 +289,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
               ))}
             </select>
           </Field>
+          )}
         </div>
 
         {editing && !changeSchedule ? (
@@ -284,7 +300,7 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
                 <span className="capitalize">{longDate(appointment.date)}</span> · {appointment.time} hs
               </span>
             </span>
-            <button type="button" onClick={() => setChangeSchedule(true)} className="min-h-10 px-2 text-sm font-semibold text-primary">
+            <button type="button" onClick={() => setChangeSchedule(true)} className="min-h-11 px-2 text-sm font-semibold text-primary">
               Cambiar
             </button>
           </div>
@@ -310,20 +326,22 @@ export function AppointmentFormSheet({ open, onClose, appointment, prefill, init
               <div>
                 <p className="text-sm font-semibold">Seña ya recibida</p>
                 <p className="text-xs text-secondary">
-                  {Math.round(depositRate * 100)}% · {money(splitDeposit(service.price, depositRate).deposit)}
+                  {depositPercent(serviceDepositRate(service, depositRate))} · {money(splitDeposit(service.price, serviceDepositRate(service, depositRate)).deposit)}
                 </p>
               </div>
               <Switch checked={depositPaid} onChange={setDepositPaid} label="Seña recibida" />
             </div>
             {depositPaid && (
-              <div className="mt-3 grid grid-cols-3 gap-1.5">
+              <div className="mt-3 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Medio de pago de la seña">
                 {METHODS.map((mth) => (
                   <button
                     key={mth}
                     type="button"
+                    role="radio"
+                    aria-checked={method === mth}
                     onClick={() => setMethod(mth)}
                     className={cn(
-                      "rounded-xl py-2 text-xs font-semibold transition-colors",
+                      "tap min-h-11 rounded-xl px-1 text-xs font-semibold transition-colors",
                       method === mth ? "bg-primary text-on-primary" : "bg-surface-lowest text-secondary",
                     )}
                   >
@@ -347,11 +365,14 @@ function ClientSearch({
   onChange,
   results,
   onPick,
+  onCreate,
 }: {
   value: string;
   onChange: (value: string) => void;
   results: ClientProfile[];
   onPick: (client: ClientProfile) => void;
+  /** Sin coincidencias: pasa lo escrito al alta de un cliente nuevo. */
+  onCreate: (text: string) => void;
 }) {
   const visible = results.slice(0, MAX_RESULTS);
   return (
@@ -371,9 +392,13 @@ function ClientSearch({
       </Field>
 
       {visible.length === 0 ? (
-        <p className="rounded-2xl bg-surface-low px-4 py-4 text-center text-[13px] text-secondary">
-          No encontramos esa ficha. Podés cargarlo como cliente sin app.
-        </p>
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface-low px-4 py-4 text-center">
+          <p className="text-[13px] text-secondary">No encontramos esa ficha.</p>
+          <button type="button" onClick={() => onCreate(value)} className="tap btn-secondary min-h-11 max-w-full px-4 text-[14px]">
+            <UserPlus size={16} aria-hidden />
+            <span className="truncate">{value.trim() ? `Crear “${value.trim()}” como cliente nuevo` : "Cargar cliente nuevo"}</span>
+          </button>
+        </div>
       ) : (
         <ul className="max-h-56 divide-y divide-surface-high overflow-y-auto overscroll-contain rounded-2xl bg-surface-low">
           {visible.map((c) => (

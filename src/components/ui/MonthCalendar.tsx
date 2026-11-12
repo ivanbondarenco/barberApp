@@ -34,6 +34,8 @@ interface MonthCalendarProps {
   maxDate?: string;
   /** Aclaración bajo el calendario: la regla que aplica a quien está mirando. */
   hint?: string;
+  /** Qué cuenta el punto, para lectores de pantalla: "turnos", "horarios libres". */
+  countLabel?: string;
   className?: string;
 }
 
@@ -51,6 +53,7 @@ export function MonthCalendar({
   minDate,
   maxDate,
   hint,
+  countLabel = "turnos",
   className,
 }: MonthCalendarProps) {
   const today = todayISO();
@@ -69,7 +72,7 @@ export function MonthCalendar({
             aria-label="Mes anterior"
             disabled={!canGoBack}
             onClick={() => onMonthChange(addMonths(first, -1))}
-            className="icon-btn h-10 w-10 text-secondary disabled:opacity-30"
+            className="icon-btn text-secondary disabled:opacity-30"
           >
             <ChevronLeft size={19} />
           </button>
@@ -78,7 +81,7 @@ export function MonthCalendar({
             aria-label="Mes siguiente"
             disabled={!canGoForward}
             onClick={() => onMonthChange(addMonths(first, 1))}
-            className="icon-btn h-10 w-10 text-secondary disabled:opacity-30"
+            className="icon-btn text-secondary disabled:opacity-30"
           >
             <ChevronRight size={19} />
           </button>
@@ -107,7 +110,7 @@ export function MonthCalendar({
             iso === null ? (
               <span key={`pad-${i}`} aria-hidden />
             ) : (
-              <DayCell key={iso} iso={iso} isToday={iso === today} active={iso === selected} mark={markOf?.(iso) ?? {}} onSelect={onSelect} />
+              <DayCell key={iso} iso={iso} isToday={iso === today} active={iso === selected} mark={markOf?.(iso) ?? {}} countLabel={countLabel} onSelect={onSelect} />
             ),
           )}
         </m.div>
@@ -123,12 +126,14 @@ function DayCell({
   isToday,
   active,
   mark,
+  countLabel,
   onSelect,
 }: {
   iso: string;
   isToday: boolean;
   active: boolean;
   mark: DayMark;
+  countLabel: string;
   onSelect: (iso: string) => void;
 }) {
   const count = mark.count ?? 0;
@@ -137,11 +142,11 @@ function DayCell({
       type="button"
       role="radio"
       aria-checked={active}
-      aria-label={`${longDate(iso)}${count ? ` · ${count} turnos` : ""}`}
+      aria-label={`${longDate(iso)}${count ? ` · ${count} ${countLabel}` : ""}`}
       disabled={mark.disabled}
       onClick={() => onSelect(iso)}
       className={cn(
-        "tap relative flex aspect-square flex-col items-center justify-center rounded-xl text-[15px] font-semibold tabular-nums transition-colors",
+        "tap relative flex aspect-square flex-col lg:aspect-auto lg:h-12 items-center justify-center rounded-xl text-[15px] font-semibold tabular-nums transition-colors",
         active ? "bg-primary text-on-primary shadow-cta" : "text-ink hover:bg-surface-low",
         !active && isToday && "ring-1 ring-primary",
         !active && mark.muted && "text-secondary",

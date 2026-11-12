@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -14,22 +14,20 @@ import { PASSWORD_MIN, passwordSchema } from "@/lib/password";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 
-const schema = z
-  .object({
-    name: z.string().trim().min(3, "Ingresá nombre y apellido").refine((v) => v.includes(" "), "Incluí tu apellido"),
-    email: z.email("Email inválido"),
-    phone: z
-      .string()
-      .trim()
-      .refine((v) => {
-        const d = v.replace(/\D/g, "");
-        return d.length >= 10 && d.length <= 13;
-      }, "Celular inválido"),
-    password: passwordSchema,
-    passwordConfirm: z.string(),
-    accept: z.boolean().refine((v) => v, "Aceptá las políticas para continuar"),
-  })
-  .refine((v) => v.password === v.passwordConfirm, { message: "No coinciden", path: ["passwordConfirm"] });
+// Alcanza con un nombre: el que dejó al reservar sin cuenta puede ser uno solo ("Lucas").
+const schema = z.object({
+  name: z.string().trim().min(2, "Ingresá nombre y apellido"),
+  email: z.email("Email inválido"),
+  phone: z
+    .string()
+    .trim()
+    .refine((v) => {
+      const d = v.replace(/\D/g, "");
+      return d.length >= 10 && d.length <= 13;
+    }, "Celular inválido"),
+  password: passwordSchema,
+  accept: z.boolean().refine((v) => v, "Aceptá las políticas para continuar"),
+});
 type Values = z.infer<typeof schema>;
 
 /**
@@ -41,6 +39,8 @@ export default function RegistroPage() {
   const registerAccount = useAppStore((s) => s.register);
   const shop = useAppStore((s) => s.shop);
   const [error, setError] = useState<string | null>(null);
+  // En lugar de pedirla dos veces: se puede mirar lo que se escribió.
+  const [showPassword, setShowPassword] = useState(false);
   /** Llega desde la pantalla final de una reserva sin cuenta: ese turno queda en la cuenta nueva. */
   const [fromBooking, setFromBooking] = useState(false);
 
@@ -51,7 +51,7 @@ export default function RegistroPage() {
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", email: "", phone: "", password: "", passwordConfirm: "", accept: false },
+    defaultValues: { name: "", email: "", phone: "", password: "", accept: false },
   });
 
   // Si ya reservó sin cuenta en este teléfono, nombre y celular ya los dejó: no se los pide de nuevo.
@@ -92,27 +92,54 @@ export default function RegistroPage() {
               : "Con una sola cuenta reservás en todas las barberías donde te atendés."}
         </p>
         <Field label="Nombre y apellido" htmlFor="r-name" error={errors.name?.message}>
-          <input id="r-name" className="field py-3" autoComplete="name" {...register("name")} />
+          <input id="r-name" className="field py-3" autoComplete="name" autoCapitalize="words" maxLength={60} {...register("name")} />
         </Field>
         <Field label="Email" htmlFor="r-email" error={errors.email?.message} hint="Es con lo que vas a ingresar">
-          <input id="r-email" className="field py-3" inputMode="email" autoComplete="email" {...register("email")} />
+          <input
+            id="r-email"
+            className="field py-3"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={120}
+            {...register("email")}
+          />
         </Field>
-        <Field label="Celular" htmlFor="r-phone" error={errors.phone?.message} hint="La barbería lo usa para confirmarte los turnos">
-          <input id="r-phone" className="field py-3" inputMode="tel" autoComplete="tel" placeholder="+54 9 11 …" {...register("phone")} />
+        <Field label="Celular" htmlFor="r-phone" error={errors.phone?.message} hint="El local lo usa si necesita avisarte algo de tu turno">
+          <input id="r-phone" className="field py-3" type="tel" inputMode="tel" autoComplete="tel" placeholder="+54 9 11 …" {...register("phone")} />
         </Field>
         <Field label="Contraseña" htmlFor="r-password" error={errors.password?.message} hint={`Al menos ${PASSWORD_MIN} caracteres`}>
-          <input id="r-password" type="password" autoComplete="new-password" className="field py-3" {...register("password")} />
-        </Field>
-        <Field label="Repetir contraseña" htmlFor="r-password2" error={errors.passwordConfirm?.message}>
-          <input id="r-password2" type="password" autoComplete="new-password" className="field py-3" {...register("passwordConfirm")} />
+          <div className="relative">
+            <input
+              id="r-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              className="field py-3 pr-12"
+              maxLength={100}
+              {...register("password")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              aria-pressed={showPassword}
+              className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-muted"
+            >
+              {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+            </button>
+          </div>
         </Field>
         <label className="flex items-start gap-2.5 text-sm text-secondary">
           <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-primary" {...register("accept")} />
           <span>
             Acepto las{" "}
-            <Link href="/politicas" className="font-semibold text-primary">
+            {/* En otra pestaña: volver no tiene que borrar lo que ya completó. */}
+            <a href="/politicas" target="_blank" rel="noreferrer" className="font-semibold text-primary">
               políticas de seña y cancelación
-            </Link>
+            </a>
           </span>
         </label>
         {errors.accept && <p className="field-error -mt-2">{errors.accept.message}</p>}

@@ -74,6 +74,11 @@ export interface Barber {
   accountIdentifier?: string;
   /** Lo que cobra por cada servicio que termina. Sin definir: no se le liquida comisión. */
   commission?: Commission;
+  /**
+   * Horario propio del barbero (índice 0 = domingo). Sin definir: atiende en el horario del local.
+   * Sirve para francos fijos o para quien trabaja solo de tarde.
+   */
+  schedule?: BusinessHours;
 }
 
 /**
@@ -151,6 +156,11 @@ export interface Service {
   tag?: string;
   featured?: boolean;
   active: boolean;
+  /**
+   * Seña propia del servicio (0 a 1). Sin definir: la del local. Permite, por ejemplo, pedir
+   * seña solo en los servicios largos.
+   */
+  depositRate?: number;
 }
 
 export type ProductCategory = "ceras" | "barba" | "afeitado" | "cuidado";
@@ -245,13 +255,42 @@ export interface Appointment {
   rating?: number;
 }
 
+/**
+ * Bloqueo de agenda. En su forma simple es un rato de un día. Además puede:
+ * - durar varios días (`until`), por ejemplo vacaciones;
+ * - repetirse ciertos días de la semana (`weekdays`), por ejemplo el almuerzo, desde `date`
+ *   hasta `until` o para siempre.
+ */
 export interface TimeBlock {
   id: string;
   barberId: string;
+  /** Primer día del bloqueo (YYYY-MM-DD). */
   date: string;
   start: string;
   end: string;
   reason: string;
+  /** Último día (inclusive). Sin definir: un solo día, o para siempre si se repite. */
+  until?: string;
+  /** Días de la semana en que se repite (0 = domingo). */
+  weekdays?: number[];
+}
+
+/**
+ * Reglas de reserva de cada barbería. Antes eran fijas para todos los locales.
+ */
+export interface BookingRules {
+  /** Cada cuántos minutos arranca un turno (10 a 60). */
+  slotStepMin: number;
+  /** Minutos libres que quedan después de cada turno, para limpiar y preparar el sillón. */
+  bufferMin: number;
+  /** Días hacia adelante que un cliente puede reservar por su cuenta. */
+  windowDays: number;
+  /** Anticipación mínima, en minutos, para que un cliente reserve un turno del día. */
+  minLeadMin: number;
+  /** Hasta cuántas horas antes el cliente cancela o reprograma sin perder la seña. */
+  cancelHours: number;
+  /** Hasta cuántas horas antes se puede abonar la seña en efectivo en el local. */
+  cashDeadlineHours: number;
 }
 
 export interface DepositSettings {
@@ -270,6 +309,10 @@ export interface IntegrationSettings {
   mercadopagoReady: boolean;
   /** Hay credenciales de WhatsApp: se pueden enviar códigos de verificación. */
   whatsappReady: boolean;
+  /**
+   * La instalación tiene conectado el WhatsApp de BarberApp para los avisos automáticos.
+   * Es de toda la instalación, no de cada local: cada local solo elige si los usa.
+   */
 }
 
 /** Una franja continua de atención dentro del día, ej. 09:00 a 13:00. */

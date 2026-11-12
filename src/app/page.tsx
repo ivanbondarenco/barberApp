@@ -6,7 +6,7 @@ import { STANDALONE_REDIRECT_SCRIPT } from "@/lib/pwa";
 export const metadata: Metadata = {
   title: "BarberApp · Turnos, señas y equipo para tu barbería",
   description:
-    "Agenda online, señas con Mercado Pago y recordatorios para tu barbería. Probala 1 mes gratis; después, el valor de 2 cortes por mes.",
+    "Agenda online, señas con Mercado Pago y recordatorios para tu barbería. Probala 1 mes gratis; después, $25.000 por mes.",
 };
 
 /**

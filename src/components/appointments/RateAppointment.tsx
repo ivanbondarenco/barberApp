@@ -59,7 +59,7 @@ export function RateAppointment({ appointment, barberName }: { appointment: Appo
           >
             <Star
               size={26}
-              className={cn(value <= shown ? "fill-primary text-primary" : "text-surface-highest")}
+              className={cn(value <= shown ? "fill-primary text-primary" : "text-outline-strong")}
               aria-hidden
             />
           </m.button>

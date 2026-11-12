@@ -26,7 +26,7 @@ test("suma productos a la bolsa del próximo turno", async ({ page }) => {
 
 test("filtra la tienda por categoría", async ({ page }) => {
   await page.goto("/cliente/tienda");
-  await page.getByRole("tab", { name: "Barba" }).click();
+  await page.getByRole("button", { name: "Barba", exact: true }).click();
   await expect(page.getByText("Beard Elixir Cedro")).toBeVisible();
   await expect(page.getByText("Matte Styling Clay")).toBeHidden();
 });

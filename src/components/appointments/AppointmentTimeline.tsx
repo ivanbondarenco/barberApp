@@ -2,7 +2,9 @@ import { BadgeCheck, CalendarClock, CalendarPlus, CircleCheck, CircleX, Hourglas
 import { cn } from "@/lib/cn";
 import { dayNumber, dayShort, monthShort } from "@/lib/dates";
 import { money, paymentMethodLabel } from "@/lib/format";
+import { appointmentDepositPercent } from "@/lib/pricing";
 import type { Appointment } from "@/lib/types";
+import type { AppointmentViewer } from "./StatusChip";
 
 interface Event {
   icon: LucideIcon;
@@ -18,12 +20,13 @@ function stamp(iso?: string): string {
   return d.toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export function AppointmentTimeline({ appointment: a }: { appointment: Appointment }) {
+export function AppointmentTimeline({ appointment: a, viewer = "staff" }: { appointment: Appointment; viewer?: AppointmentViewer }) {
+  const client = viewer === "client";
   const events: Event[] = [
     {
       icon: CalendarPlus,
-      label: a.source === "manual" ? "Agendado por el local" : "Reservado desde la app",
-      detail: a.clientName,
+      label: a.source === "manual" ? (client ? "Te agendó el local" : "Agendado por el local") : client ? "Reservaste desde la app" : "Reservado desde la app",
+      detail: client ? a.serviceName : a.clientName,
       at: a.createdAt,
       tone: "neutral",
     },
@@ -31,8 +34,8 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
   if (a.deposit.declaredAt && a.deposit.status !== "abonada") {
     events.push({
       icon: Hourglass,
-      label: "Transferencia avisada",
-      detail: a.deposit.reference ? `Comprobante ${a.deposit.reference}` : "A confirmar por el local",
+      label: client ? "Avisaste la transferencia" : "Transferencia avisada",
+      detail: a.deposit.reference ? `Comprobante ${a.deposit.reference}` : client ? "El local la está confirmando" : "A confirmar por el local",
       at: a.deposit.declaredAt,
       tone: "neutral",
     });
@@ -40,7 +43,7 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
   if (a.deposit.status === "abonada") {
     events.push({
       icon: BadgeCheck,
-      label: "Seña 50% abonada",
+      label: client ? `Pagaste la seña (${appointmentDepositPercent(a)})` : `Seña ${appointmentDepositPercent(a)} abonada`,
       detail: `${money(a.deposit.amount)} · ${paymentMethodLabel[a.deposit.method]}`,
       at: a.deposit.paidAt,
       tone: "primary",
@@ -59,7 +62,7 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
   if (a.balancePayment) {
     events.push({
       icon: CircleCheck,
-      label: "Saldo cobrado en sillón",
+      label: client ? "Pagaste el saldo en el local" : "Saldo cobrado en sillón",
       detail: `${money(a.balancePayment.amount)} · ${paymentMethodLabel[a.balancePayment.method]}`,
       at: a.balancePayment.paidAt,
       tone: "mint",
@@ -68,11 +71,11 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
   if (a.status === "cancelado") {
     events.push({
       icon: CircleX,
-      label: a.holdExpired ? "Reserva liberada" : "Turno cancelado",
+      label: a.holdExpired ? (client ? "Se liberó el horario" : "Reserva liberada") : "Turno cancelado",
       detail: a.holdExpired
         ? "Venció el plazo para pagar la seña"
         : a.creditIssued
-          ? `Crédito a favor ${money(a.creditIssued)}`
+          ? `${client ? "Te quedó crédito a favor" : "Crédito a favor"} ${money(a.creditIssued)}`
           : "Sin reintegro de seña",
       at: a.cancelledAt,
       tone: "error",
@@ -81,8 +84,10 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
   if (a.status === "no_show") {
     events.push({
       icon: UserX,
-      label: "No se presentó",
-      detail: a.depositForfeited ? `Seña retenida ${money(a.depositForfeited)}` : "No había seña abonada",
+      label: client ? "No asististe" : "No se presentó",
+      detail: a.depositForfeited
+        ? `${client ? "El local retuvo la seña de" : "Seña retenida"} ${money(a.depositForfeited)}`
+        : "No había seña abonada",
       at: a.noShowAt,
       tone: "error",
     });
@@ -108,10 +113,10 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-2">
-                <p className="text-[13px] font-semibold leading-tight">{e.label}</p>
-                <span className="shrink-0 text-[10px] text-secondary">{stamp(e.at)}</span>
+                <p className="text-sm font-semibold leading-tight">{e.label}</p>
+                <span className="shrink-0 text-xs text-secondary">{stamp(e.at)}</span>
               </div>
-              <p className="truncate text-[11px] text-secondary">{e.detail}</p>
+              <p className="truncate text-xs text-secondary">{e.detail}</p>
             </div>
           </li>
         );
@@ -122,12 +127,12 @@ export function AppointmentTimeline({ appointment: a }: { appointment: Appointme
 
 export function StatusBadge({ appointment: a }: { appointment: Appointment }) {
   if (a.status === "completado")
-    return <span className="rounded-full bg-mint px-2 py-0.5 text-[10px] font-bold uppercase text-mint-ink">Completado</span>;
+    return <span className="rounded-full bg-mint px-2 py-0.5 text-xs font-bold uppercase text-mint-ink">Completado</span>;
   if (a.status === "cancelado")
-    return <span className="rounded-full bg-error-container px-2 py-0.5 text-[10px] font-bold uppercase text-error">Cancelado</span>;
+    return <span className="rounded-full bg-error-container px-2 py-0.5 text-xs font-bold uppercase text-error">Cancelado</span>;
   return a.deposit.status === "abonada" ? (
-    <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-on-primary">Seña 50% abonada</span>
+    <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold uppercase text-on-primary">Seña {appointmentDepositPercent(a)} abonada</span>
   ) : (
-    <span className="rounded-full bg-primary-fixed px-2 py-0.5 text-[10px] font-bold uppercase text-primary">Seña pendiente</span>
+    <span className="rounded-full bg-primary-fixed px-2 py-0.5 text-xs font-bold uppercase text-primary">Seña pendiente</span>
   );
 }

@@ -2,17 +2,33 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
+import { MessageCircle, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "@/components/ui/Segmented";
 import { MonthCalendar } from "@/components/ui/MonthCalendar";
-import { addDays, monthGrid, sameMonth, todayISO } from "@/lib/dates";
+import { addDays, dayNumber, dayShort, monthGrid, monthShort, sameMonth, todayISO } from "@/lib/dates";
+import { whatsappLink } from "@/lib/format";
 import { ease } from "@/lib/motion";
-import { buildSlots, CLIENT_BOOKING_DAYS, clientBookingLimit, openingHours, shiftOf, type Shift } from "@/lib/schedule";
+import {
+  ANY_BARBER,
+  anyBarberSlots,
+  barberHours,
+  buildSlots,
+  clientBookingLimit,
+  openingHours,
+  shiftOf,
+  windowLabel,
+  type Shift,
+} from "@/lib/schedule";
 import { cn } from "@/lib/cn";
+import { isStaff } from "@/lib/types";
 import { useAppStore } from "@/store/useAppStore";
+import { useBookingRules } from "@/store/useRules";
 
 /** Hasta cuántos días adelante busca el primer día con lugar cuando agenda el local. */
 const STAFF_SEARCH_DAYS = 90;
+
+const shortDate = (iso: string) => `${dayShort(iso)} ${dayNumber(iso)} ${monthShort(iso)}`;
 
 interface SlotPickerProps {
   barberId: string;
@@ -22,13 +38,17 @@ interface SlotPickerProps {
   onDateChange: (date: string) => void;
   onTimeChange: (time: string | null) => void;
   excludeAppointmentId?: string;
+  /** Si viene, cuando no hay lugar en ningún día se ofrece probar con otro barbero. */
+  onChangeBarber?: () => void;
 }
 
 /**
  * Calendario del mes + horarios libres del día elegido, agrupados por turno.
  *
- * El cliente solo puede elegir dentro de las próximas dos semanas; el staff, cualquier día de
- * acá en adelante. La misma regla la vuelve a controlar el servidor al guardar.
+ * Quien reserva por su cuenta (cliente o invitado sin sesión) solo puede elegir dentro de las
+ * próximas dos semanas; el staff, cualquier día de acá en adelante. La misma regla la vuelve a
+ * controlar el servidor al guardar. El staff además agenda al que entra sin turno: sin
+ * anticipación mínima y con el horario que está corriendo ("Ahora").
  */
 export function SlotPicker({
   barberId,
@@ -38,19 +58,36 @@ export function SlotPicker({
   onDateChange,
   onTimeChange,
   excludeAppointmentId,
+  onChangeBarber,
 }: SlotPickerProps) {
   const appointments = useAppStore((s) => s.appointments);
   const blocks = useAppStore((s) => s.blocks);
-  const hours = useAppStore((s) => s.businessHours);
-  const isClient = useAppStore((s) => s.session?.role === "cliente");
+  const shopHours = useAppStore((s) => s.businessHours);
+  const barbers = useAppStore((s) => s.barbers);
+  const rules = useBookingRules();
+  const anyBarber = barberId === ANY_BARBER;
+  // Cada barbero atiende en su horario; con "me da igual", vale el del local para saltear días.
+  const hours = useMemo(
+    () => (anyBarber ? shopHours : barberHours(barbers.find((b) => b.id === barberId), shopHours)),
+    [anyBarber, barbers, barberId, shopHours],
+  );
+  const whatsapp = useAppStore((s) => s.businessInfo.whatsapp);
+  // Sin sesión (invitado) o cliente: las mismas reglas que le aplica el servidor.
+  const staff = useAppStore((s) => !!s.session && isStaff(s.session.role));
+  const isClient = !staff;
 
   const today = todayISO();
-  const maxDate = isClient ? clientBookingLimit() : undefined;
+  const maxDate = isClient ? clientBookingLimit(new Date(), rules.windowDays) : undefined;
   const [month, setMonth] = useState(date ?? today);
 
   const slotsOf = useCallback(
-    (d: string) => buildSlots({ date: d, barberId, durationMin, appointments, blocks, hours, excludeAppointmentId }),
-    [barberId, durationMin, appointments, blocks, hours, excludeAppointmentId],
+    (d: string) => {
+      const query = { date: d, durationMin, appointments, blocks, excludeAppointmentId, walkIn: staff, rules };
+      return anyBarber
+        ? anyBarberSlots({ ...query, barbers, shopHours })
+        : buildSlots({ ...query, barberId, hours });
+    },
+    [anyBarber, barbers, shopHours, barberId, durationMin, appointments, blocks, hours, excludeAppointmentId, staff, rules],
   );
 
   const inRange = useCallback((d: string) => d >= today && (!maxDate || d <= maxDate), [today, maxDate]);
@@ -66,21 +103,26 @@ export function SlotPicker({
   }, [month, inRange, slotsOf]);
 
   const firstFreeDay = useMemo(() => {
-    const horizon = isClient ? CLIENT_BOOKING_DAYS : STAFF_SEARCH_DAYS;
+    const horizon = isClient ? rules.windowDays : STAFF_SEARCH_DAYS;
     for (let i = 0; i <= horizon; i++) {
       const d = addDays(today, i);
-      if (!openingHours(d, hours)) continue;
+      if (!anyBarber && !openingHours(d, hours)) continue;
       if (slotsOf(d).some((s) => s.available)) return d;
     }
     return null;
-  }, [isClient, today, hours, slotsOf]);
+  }, [isClient, rules.windowDays, today, anyBarber, hours, slotsOf]);
 
-  // Si el día elegido no tiene lugar (o no hay día), salta al primero con horarios libres.
+  // Cliente: si el día elegido no tiene lugar (o no hay día), salta al primero con horarios libres.
+  // Staff: arranca en hoy y no salta solo; si no hay lugar se lo avisa y le ofrece el próximo día libre.
   useEffect(() => {
     if (time) return;
+    if (staff) {
+      if (!date || !inRange(date)) onDateChange(today);
+      return;
+    }
     if (date && inRange(date) && slotsOf(date).some((s) => s.available)) return;
     if (firstFreeDay && firstFreeDay !== date) onDateChange(firstFreeDay);
-  }, [date, time, inRange, slotsOf, firstFreeDay, onDateChange]);
+  }, [date, time, staff, today, inRange, slotsOf, firstFreeDay, onDateChange]);
 
   // El calendario sigue al día elegido, venga de un click o de afuera (un turno que se mueve).
   useEffect(() => {
@@ -106,6 +148,21 @@ export function SlotPicker({
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = shift === "manana" ? morning : afternoon;
+
+  /** Staff parado en un día sin lugar: el próximo día con horarios libres después de ese. */
+  const nextFreeDay = useMemo(() => {
+    if (!staff || !date || slots.length) return null;
+    for (let i = 1; i <= STAFF_SEARCH_DAYS; i++) {
+      const d = addDays(date, i);
+      if (!anyBarber && !openingHours(d, hours)) continue;
+      if (slotsOf(d).some((s) => s.available)) return d;
+    }
+    return null;
+  }, [staff, date, slots.length, anyBarber, hours, slotsOf]);
+
+  /** Ningún día de la ventana tiene lugar: mandarlo a "otro día" no sirve. */
+  const noAvailability = !firstFreeDay && !slots.length;
+  const staffDayFull = staff && !!date && !slots.length;
 
   // Al tocar un día, si los horarios quedan abajo de la pantalla (calendario largo en celular),
   // se baja solo hasta ellos: si no, parece que el día no tiene lugar.
@@ -140,8 +197,49 @@ export function SlotPicker({
         markOf={(iso) => ({ count: freeByDay.get(iso) ?? 0, disabled: !freeByDay.get(iso) })}
         minDate={today}
         maxDate={maxDate}
-        hint={isClient ? `Podés reservar hasta ${CLIENT_BOOKING_DAYS / 7} semanas por adelantado.` : undefined}
+        hint={isClient ? `Podés reservar hasta ${windowLabel(rules.windowDays)} por adelantado.` : undefined}
+        countLabel="horarios libres"
       />
+
+      {noAvailability ? (
+        <div role="status" className="flex flex-col gap-3 rounded-2xl bg-surface-low px-4 py-4 text-sm">
+          <p className="text-secondary">
+            {isClient
+              ? `No quedan horarios libres en ${windowLabel(rules.windowDays)}${anyBarber ? "" : " con este barbero"}.`
+              : "No quedan horarios libres con este barbero."}
+          </p>
+          {(onChangeBarber || (isClient && whatsapp)) && (
+            <div className="flex flex-wrap gap-2">
+              {onChangeBarber && (
+                <button type="button" onClick={onChangeBarber} className="tap btn-secondary w-auto px-4">
+                  <Users size={16} aria-hidden /> Probá con otro barbero
+                </button>
+              )}
+              {isClient && whatsapp && (
+                <a
+                  href={whatsappLink(whatsapp, "Hola, quería sacar un turno y no encontré horarios libres en la app.")}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="tap btn-secondary w-auto px-4"
+                >
+                  <MessageCircle size={16} aria-hidden /> Escribile al local
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        staffDayFull && (
+          <div role="status" className="flex flex-col items-start gap-1 rounded-2xl bg-surface-low px-4 py-3 text-sm">
+            <p className="font-medium">{date === today ? "Hoy no quedan horarios libres" : "Este día no tiene horarios libres"}</p>
+            {nextFreeDay && (
+              <button type="button" onClick={() => selectDay(nextFreeDay)} className="text-link text-[13px]">
+                Ver el próximo día libre ({shortDate(nextFreeDay)})
+              </button>
+            )}
+          </div>
+        )
+      )}
 
       <div ref={slotsRef} className="flex scroll-mt-24 flex-col gap-4">
         <Segmented
@@ -162,9 +260,19 @@ export function SlotPicker({
             exit={{ opacity: 0, transition: { duration: 0.1 } }}
           >
             {visible.length === 0 ? (
-              <p className="rounded-2xl bg-surface-low px-4 py-6 text-center text-sm text-secondary">
-                No quedan horarios {shift === "manana" ? "a la mañana" : "a la tarde"}. Probá otro día.
-              </p>
+              // Sin nada en todo el día, el aviso de arriba ya lo explica.
+              noAvailability || staffDayFull ? null : (
+                <p className="rounded-2xl bg-surface-low px-4 py-6 text-center text-sm text-secondary">
+                  No quedan horarios {shift === "manana" ? "a la mañana" : "a la tarde"}.{" "}
+                  {slots.length ? (
+                    <button type="button" onClick={() => setShift(shift === "manana" ? "tarde" : "manana")} className="text-link">
+                      Ver {shift === "manana" ? "la tarde" : "la mañana"}
+                    </button>
+                  ) : (
+                    "Probá otro día."
+                  )}
+                </p>
+              )
             ) : (
               <div role="radiogroup" aria-label="Horario" className="grid grid-cols-4 gap-2">
                 {visible.map((slot) => {
@@ -175,6 +283,7 @@ export function SlotPicker({
                       type="button"
                       role="radio"
                       aria-checked={active}
+                      aria-label={slot.current ? `Ahora, ${slot.time}` : undefined}
                       onClick={() => onTimeChange(slot.time)}
                       className={cn(
                         "tap rounded-xl py-3 text-sm font-semibold tabular-nums transition-colors",
@@ -183,7 +292,7 @@ export function SlotPicker({
                           : "bg-surface-lowest text-ink shadow-xs hover:bg-surface-low",
                       )}
                     >
-                      {slot.time}
+                      {slot.current ? "Ahora" : slot.time}
                     </button>
                   );
                 })}

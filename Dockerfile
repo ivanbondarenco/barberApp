@@ -17,6 +17,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_PATH=/data/ds-studio.db
+# Los turnos se guardan en hora local ("15:00") y el servidor calcula plazos con ella: sin esto el
+# contenedor corre en UTC y los plazos, la anticipación mínima y los recordatorios se corren 3 horas.
+RUN apk add --no-cache tzdata
+ENV TZ=America/Argentina/Buenos_Aires
 
 # sql.js carga su WebAssembly desde node_modules en tiempo de ejecución, así que las
 # dependencias van completas: no alcanza con el standalone de Next.

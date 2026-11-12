@@ -29,7 +29,8 @@ export const useToast = create<ToastState>()((set, get) => ({
   show: (message, tone = "info", action) => {
     const id = ++counter;
     set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, tone, action }] }));
-    setTimeout(() => get().dismiss(id), action ? 5000 : 3000);
+    // Los errores suelen explicar una regla: necesitan más tiempo de lectura que un "Listo".
+    setTimeout(() => get().dismiss(id), tone === "error" ? 6500 : action ? 5500 : 4000);
     return id;
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

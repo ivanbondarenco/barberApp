@@ -10,12 +10,19 @@ interface PublicShellProps {
   title: string;
   /** Destino si no hay historial para volver. */
   fallbackHref?: string;
+  /**
+   * Destino fijo de "volver", sin mirar el historial. Para pantallas a las que se llega desde
+   * afuera (la vuelta de Mercado Pago): el historial podría meterlo de nuevo en el checkout.
+   */
+  backHref?: string;
+  /** Lo consulta antes de navegar: si devuelve `true`, ya manejó el volver (un paso atrás en un asistente). */
+  onBack?: () => boolean;
   children: ReactNode;
   footer?: ReactNode;
 }
 
 /** Columna mobile para páginas sin sesión: header con volver, contenido y pie opcional. */
-export function PublicShell({ title, fallbackHref = "/auth/login", children, footer }: PublicShellProps) {
+export function PublicShell({ title, fallbackHref = "/auth/login", backHref, onBack, children, footer }: PublicShellProps) {
   const router = useRouter();
 
   useEffect(() => {
@@ -23,7 +30,9 @@ export function PublicShell({ title, fallbackHref = "/auth/login", children, foo
   }, []);
 
   const back = () => {
-    if (window.history.length > 1) router.back();
+    if (onBack?.()) return;
+    if (backHref) router.replace(backHref, { transitionTypes: [...NAV.back] });
+    else if (window.history.length > 1) router.back();
     else router.push(fallbackHref, { transitionTypes: [...NAV.back] });
   };
 

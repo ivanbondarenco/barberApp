@@ -14,6 +14,12 @@ export async function register() {
   // Respaldo del webhook de Mercado Pago: acredita señas cuya notificación se perdió.
   const { startOrderReconciler } = await import("./server/mp-orders");
   startOrderReconciler();
+  // Avisos de la suscripción. `DISABLE_WORKERS=1` los apaga (por ejemplo, en una segunda
+  // instancia mientras la base no tenga candados).
+  if (process.env.DISABLE_WORKERS !== "1") {
+    const { startWorkers } = await import("./server/workers");
+    startWorkers();
+  }
 }
 
 /** Errores que Next captura por su cuenta (render, rutas): también avisan. */

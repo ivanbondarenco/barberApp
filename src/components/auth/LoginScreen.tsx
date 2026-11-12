@@ -51,9 +51,12 @@ export function LoginScreen() {
   const [role, setRole] = useState<LoginRole>("cliente");
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  /** Llegó por el link de una barbería que no existe (/b/<slug> desconocido). */
+  const [unknownShop, setUnknownShop] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    setUnknownShop(params.get("local") === "desconocido");
     // El link de una barbería (/b/<slug>) trae a un cliente: esa solapa manda sobre la recordada.
     const tipo = params.get("tipo");
     setRole(tipo === "cliente" ? "cliente" : tipo === "barbero" ? "staff" : savedTab());
@@ -122,6 +125,23 @@ export function LoginScreen() {
             className="mb-5"
           />
 
+          {isClient && !shop && (
+            // Sin barbería elegida no hay dónde reservar: se reserva desde el link de cada local.
+            <div role={unknownShop ? "alert" : undefined} className={unknownShop ? "mb-5 rounded-2xl bg-error-container px-4 py-3 text-[13px] text-error" : "mb-5 rounded-2xl bg-surface-low px-4 py-3 text-[13px] text-secondary"}>
+              {unknownShop ? (
+                <>
+                  <strong className="block font-semibold">No encontramos esa barbería.</strong>
+                  Revisá el link o pedile a tu barbería su link de reservas.
+                </>
+              ) : (
+                <>
+                  <strong className="block font-semibold text-ink">¿Querés reservar?</strong>
+                  Pedile a tu barbería su link de reservas: con él reservás sin crear cuenta. Si ya tenés cuenta, ingresá.
+                </>
+              )}
+            </div>
+          )}
+
           {isClient && shop && (
             <div className="mb-5 flex flex-col gap-2">
               <Link href="/reservar" transitionTypes={[...NAV.forward]} className="tap btn-primary py-3.5 text-[15px]">
@@ -137,8 +157,12 @@ export function LoginScreen() {
               <input
                 id="identifier"
                 className="field py-3"
+                type={isClient ? "email" : "text"}
                 inputMode={isClient ? "email" : "text"}
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={isClient ? "tu@email.com" : "Celular o email"}
                 {...register("identifier")}
               />

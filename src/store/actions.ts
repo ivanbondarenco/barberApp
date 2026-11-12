@@ -2,17 +2,7 @@
 
 import type { AppointmentPatch, BookPayload, Command } from "@/lib/commands";
 import { uid } from "@/lib/format";
-import type {
-  Barber,
-  BusinessInfo,
-  ClientProfile,
-  DayHours,
-  PaymentMethod,
-  PayoutMethod,
-  Product,
-  Service,
-  TimeBlock,
-} from "@/lib/types";
+import type { Barber, BookingRules, BusinessInfo, ClientProfile, DayHours, PaymentMethod, PayoutMethod, Product, Service, TimeBlock } from "@/lib/types";
 import { useAppStore, type Result } from "./useAppStore";
 import { toast, undoToast } from "./useToast";
 
@@ -118,8 +108,9 @@ export async function createPayout(input: {
 export const deletePayout = (id: string) =>
   runWithFeedback({ type: "payout.delete", id }, "Liquidación anulada. Los servicios y adelantos vuelven a pendientes.");
 
-export const saveClient = (client: ClientProfile, isNew: boolean) =>
-  runWithFeedback({ type: "client.upsert", client }, isNew ? "Cliente creado" : "Cambios guardados");
+/** `quiet`: sin aviso de éxito (un switch ya muestra su estado); los errores se avisan igual. */
+export const saveClient = (client: ClientProfile, isNew: boolean, quiet = false) =>
+  runWithFeedback({ type: "client.upsert", client }, quiet ? undefined : isNew ? "Cliente creado" : "Cambios guardados");
 
 export const deleteClient = (id: string) => runWithFeedback({ type: "client.delete", id }, "Cliente eliminado");
 
@@ -147,6 +138,11 @@ export const updateHours = (dayIndex: number, patch: Partial<DayHours>) => runWi
 
 export const updateBusinessInfo = (patch: Partial<BusinessInfo>) =>
   runWithFeedback({ type: "settings.info", patch }, "Datos del negocio guardados");
+
+/** Reglas de reserva (paso entre turnos, plazos). Sin aviso de éxito: se guardan al tocar. */
+export const updateBookingRules = (patch: Partial<BookingRules>) => runWithFeedback({ type: "settings.booking", patch });
+
+/** Avisos automáticos por WhatsApp. */
 
 // ───────── Pagos y cuentas (fuera del estado de dominio) ─────────
 

@@ -43,9 +43,27 @@ export default function SueldosPage() {
   const [half, setHalf] = useState<Half>(() => (Number(todayISO().slice(8)) <= 15 ? "primera" : "segunda"));
   const range = periodOf(month, half);
 
+  // Cada barbero con lo que se le liquidaría. Un barbero dado de baja que no tiene nada
+  // pendiente no aporta nada: se omite para no llenar la pantalla de tarjetas en cero.
   const team = useMemo(
-    () => barbers.filter((b) => (isOwner ? true : b.id === session?.barberId)).sort((a, b) => a.chair - b.chair),
-    [barbers, isOwner, session?.barberId],
+    () =>
+      barbers
+        .filter((b) => (isOwner ? true : b.id === session?.barberId))
+        .sort((a, b) => a.chair - b.chair)
+        .map((barber) => ({
+          barber,
+          preview: payrollPreview({
+            barberId: barber.id,
+            commission: barber.commission,
+            from: range.from,
+            to: range.to,
+            appointments,
+            advances,
+            payouts,
+          }),
+        }))
+        .filter(({ barber, preview }) => barber.active || preview.items.length > 0 || preview.advances.length > 0),
+    [barbers, isOwner, session?.barberId, range.from, range.to, appointments, advances, payouts],
   );
 
   const [advanceFor, setAdvanceFor] = useState<Barber | null>(null);
@@ -58,10 +76,10 @@ export default function SueldosPage() {
       <div className="flex items-center justify-between">
         <p className="text-[15px] font-semibold capitalize">{monthYear(month)}</p>
         <div className="flex items-center">
-          <button type="button" aria-label="Mes anterior" onClick={() => setMonth((m) => addMonths(m, -1))} className="icon-btn h-10 w-10 text-secondary">
+          <button type="button" aria-label="Mes anterior" onClick={() => setMonth((m) => addMonths(m, -1))} className="icon-btn text-secondary">
             <ChevronLeft size={19} />
           </button>
-          <button type="button" aria-label="Mes siguiente" onClick={() => setMonth((m) => addMonths(m, 1))} className="icon-btn h-10 w-10 text-secondary">
+          <button type="button" aria-label="Mes siguiente" onClick={() => setMonth((m) => addMonths(m, 1))} className="icon-btn text-secondary">
             <ChevronRight size={19} />
           </button>
         </div>
@@ -81,19 +99,11 @@ export default function SueldosPage() {
         <EmptyState icon={HandCoins} title="Todavía no hay barberos" text="Sumalos desde Equipo para liquidarles sus comisiones." />
       ) : (
         <div className="flex flex-col gap-3">
-          {team.map((barber) => (
+          {team.map(({ barber, preview }) => (
             <BarberCard
               key={barber.id}
               barber={barber}
-              preview={payrollPreview({
-                barberId: barber.id,
-                commission: barber.commission,
-                from: range.from,
-                to: range.to,
-                appointments,
-                advances,
-                payouts,
-              })}
+              preview={preview}
               isOwner={isOwner}
               onAdvance={() => setAdvanceFor(barber)}
               onPay={(preview) => setPayFor({ barber, preview })}
@@ -188,19 +198,24 @@ function BarberCard({
         </div>
         <div className="flex justify-between border-t border-surface-high pt-2 text-base font-bold">
           <dt>A cobrar</dt>
-          <dd className="tabular-nums text-primary">{money(preview.net)}</dd>
+          <dd className={preview.net < 0 ? "tabular-nums text-error" : "tabular-nums text-primary"}>{money(preview.net)}</dd>
         </div>
       </dl>
+      {preview.net < 0 && (
+        <p className="rounded-xl bg-amber-container px-3 py-2 text-xs text-amber-ink">
+          Los adelantos superan lo ganado en el período: si liquidás ahora, queda saldo a favor del local.
+        </p>
+      )}
 
       {preview.advances.length > 0 && (
         <ul className="flex flex-col gap-1 rounded-xl bg-surface-low p-2 text-xs">
           {preview.advances.map((a) => (
-            <li key={a.id} className="flex items-center gap-2 px-1">
+            <li key={a.id} className="flex min-h-9 items-center gap-2 px-1">
               <span className="text-secondary">{shortDate(a.date)}</span>
               <span className="min-w-0 flex-1 truncate">{a.note || "Adelanto"}</span>
               <span className="font-semibold tabular-nums">{money(a.amount)}</span>
               {isOwner && (
-                <button type="button" aria-label="Eliminar adelanto" onClick={() => setRemoving(a)} className="icon-btn h-8 w-8 text-secondary">
+                <button type="button" aria-label="Eliminar adelanto" onClick={() => setRemoving(a)} className="icon-btn -my-2 -mr-1 text-secondary">
                   <Trash2 size={14} />
                 </button>
               )}
@@ -331,7 +346,11 @@ function PaySheet({
       subtitle={`Del ${shortDate(range.from)} al ${shortDate(range.to)}`}
       footer={
         <button type="button" disabled={busy} onClick={() => void submit()} className="tap btn-primary">
-          {busy ? "Liquidando…" : `Pagar ${money(preview?.net ?? 0)} y generar recibo`}
+          {busy
+            ? "Liquidando…"
+            : (preview?.net ?? 0) < 0
+              ? `Liquidar con saldo a favor del local y generar recibo`
+              : `Pagar ${money(preview?.net ?? 0)} y generar recibo`}
         </button>
       }
     >
@@ -356,8 +375,9 @@ function PaySheet({
             </div>
           </dl>
           {preview.net < 0 && (
-            <p className="rounded-xl bg-amber-container px-3 py-2 text-xs text-amber-ink">
-              Los adelantos superan lo ganado: el recibo queda con saldo a favor del local.
+            <p role="alert" className="rounded-xl bg-amber-container px-3 py-2.5 text-[13px] font-medium text-amber-ink">
+              Atención: los adelantos superan lo ganado por {money(-preview.net)}. No le pagás nada y el recibo queda con
+              ese saldo a favor del local. Si preferís, esperá a que sume más servicios.
             </p>
           )}
           <div className="flex flex-col gap-2">

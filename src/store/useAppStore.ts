@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { applyCommand, DomainError, type Actor, type Command, type DomainState } from "@/lib/commands";
 import { DEFAULT_DEPOSIT_RATE } from "@/lib/pricing";
-import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
+import { DEFAULT_BOOKING_RULES, DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
 import { seedBusinessInfo } from "@/lib/mock-data";
 import type { ClientProfile, Session, Shop } from "@/lib/types";
 
@@ -68,6 +68,7 @@ const emptyDomain: DomainState = {
   businessInfo: seedBusinessInfo,
   // Lo confirma el servidor en el primer /api/state; por defecto, sin integraciones.
   integrations: { mercadopagoReady: false, whatsappReady: false },
+  bookingRules: DEFAULT_BOOKING_RULES,
 };
 
 const DOMAIN_KEYS = Object.keys(emptyDomain) as (keyof DomainState)[];

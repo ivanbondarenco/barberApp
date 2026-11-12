@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, CircleX, Info } from "lucide-react";
+import { CircleCheck, CircleX, Info, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { cn } from "@/lib/cn";
@@ -16,7 +16,6 @@ export function Toaster() {
 
   return (
     <div
-      aria-live="polite"
       className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+60px)] z-[80] mx-auto flex max-w-[480px] flex-col gap-2 px-4 lg:top-[84px]"
     >
       <AnimatePresence initial={false}>
@@ -35,9 +34,13 @@ export function Toaster() {
               )}
             >
               <Icon size={18} className={cn("shrink-0", t.tone === "success" && "text-primary-fixed")} aria-hidden />
-              <button type="button" onClick={() => dismiss(t.id)} className="min-h-10 min-w-0 flex-1 text-left">
+              <p
+                role={t.tone === "error" ? "alert" : "status"}
+                aria-live={t.tone === "error" ? "assertive" : "polite"}
+                className="min-w-0 flex-1 py-1 text-left"
+              >
                 {t.message}
-              </button>
+              </p>
               {t.action && (
                 <button
                   type="button"
@@ -45,11 +48,22 @@ export function Toaster() {
                     t.action!.onClick();
                     dismiss(t.id);
                   }}
-                  className="min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold text-primary-fixed hover:bg-on-primary/10"
+                  className="min-h-11 shrink-0 rounded-lg px-3 text-sm font-bold text-primary-fixed hover:bg-on-primary/10"
                 >
                   {t.action.label}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => dismiss(t.id)}
+                aria-label="Cerrar aviso"
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
+                  t.tone === "error" ? "hover:bg-error/10" : "text-on-primary/70 hover:bg-on-primary/10",
+                )}
+              >
+                <X size={16} aria-hidden />
+              </button>
             </m.div>
           );
         })}

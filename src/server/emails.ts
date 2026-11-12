@@ -1,5 +1,5 @@
 import "server-only";
-import { longDate } from "@/lib/dates";
+import { longDate, toISODate } from "@/lib/dates";
 import { money } from "@/lib/format";
 import { FREE_CANCELLATION_HOURS } from "@/lib/pricing";
 import type { Appointment, BusinessInfo } from "@/lib/types";
@@ -140,7 +140,12 @@ export function passwordResetEmail(name: string, code: string): Email {
 
 // ───────── Turnos ─────────
 
-export function appointmentBookedEmail(appointment: Appointment, info: Pick<BusinessInfo, "name" | "address">): Email {
+export function appointmentBookedEmail(
+  appointment: Appointment,
+  info: Pick<BusinessInfo, "name" | "address">,
+  /** Plazo sin cargo del local (sus reglas de reserva). */
+  cancelHours = FREE_CANCELLATION_HOURS,
+): Email {
   const pending = appointment.deposit.status !== "abonada" && appointment.deposit.amount > 0;
   return {
     subject: `Turno reservado: ${longDate(appointment.date)} ${appointment.time} hs`,
@@ -153,7 +158,7 @@ export function appointmentBookedEmail(appointment: Appointment, info: Pick<Busi
           ? p(`Queda pendiente la seña de <strong>${money(appointment.deposit.amount)}</strong>. Podés abonarla desde la app.`)
           : p("La seña ya está paga. Te esperamos.")) +
         p(button("Ver mi turno", `${appUrl()}/cliente/mis-turnos`)) +
-        small(`Si no podés venir, avisá con tiempo: cancelás sin cargo hasta ${FREE_CANCELLATION_HOURS} horas antes.`),
+        small(`Si no podés venir, avisá con tiempo: cancelás sin cargo hasta ${cancelHours} horas antes.`),
     }),
   };
 }
@@ -187,6 +192,64 @@ export function appointmentReminderEmail(appointment: Appointment, info: Pick<Bu
         (pending ? p(`Te queda pendiente la seña de <strong>${money(appointment.deposit.amount)}</strong>.`) : "") +
         p(button("Ver mi turno", `${appUrl()}/cliente/mis-turnos`)) +
         small("Si no podés venir, avisanos así liberamos el horario."),
+    }),
+  };
+}
+
+// ───────── Suscripción de BarberApp ─────────
+
+export type BillingNoticeKind = "trial_7d" | "trial_1d" | "past_due" | "suspended";
+
+/**
+ * Avisos al dueño sobre su suscripción. Siempre con el link a la pantalla para pagar, y
+ * diciendo lo importante primero: cuándo se corta y que los datos no se pierden.
+ */
+export function billingNoticeEmail(
+  kind: BillingNoticeKind,
+  opts: { ownerName: string; shopName: string; price: number; date: string },
+): Email {
+  const link = `${appUrl()}/admin/suscripcion`;
+  const when = longDate(toISODate(new Date(opts.date)));
+  const hi = p(`Hola ${esc(firstName(opts.ownerName))},`);
+  const price = `<strong>${money(opts.price)} por mes</strong>`;
+  const copy: Record<BillingNoticeKind, { subject: string; heading: string; body: string }> = {
+    trial_7d: {
+      subject: `Te quedan 7 días de prueba en ${opts.shopName}`,
+      heading: "Tu prueba gratis termina en una semana",
+      body:
+        p(`La prueba de <strong>${esc(opts.shopName)}</strong> termina el ${esc(when)}.`) +
+        p(`Para seguir usando la agenda, suscribite por ${price}: el valor de 2 cortes de tu barbería.`),
+    },
+    trial_1d: {
+      subject: `Mañana termina tu prueba en ${opts.shopName}`,
+      heading: "Tu prueba gratis termina mañana",
+      body:
+        p(`La prueba de <strong>${esc(opts.shopName)}</strong> termina el ${esc(when)}.`) +
+        p(`Suscribite hoy por ${price} y seguí sin cortes.`),
+    },
+    past_due: {
+      subject: `${opts.shopName}: la suscripción está vencida`,
+      heading: "Tu suscripción está vencida",
+      body:
+        p(`Todavía podés usar todo normalmente, pero si no se paga, el ${esc(when)} se suspende la agenda y tus clientes no van a poder reservar.`) +
+        p(`La cuota es de ${price}.`),
+    },
+    suspended: {
+      subject: `${opts.shopName}: la agenda está suspendida`,
+      heading: "Suspendimos la agenda del local",
+      body:
+        p("Tus clientes ya no pueden reservar online y el equipo no puede cargar turnos.") +
+        p(`<strong>No se borró nada</strong>: apenas pagues (${price}), todo vuelve a funcionar como estaba.`),
+    },
+  };
+  const { subject, heading, body } = copy[kind];
+  return {
+    subject,
+    html: layout({
+      title: "BarberApp",
+      heading,
+      body: hi + body + p(button(kind === "suspended" ? "Pagar y reactivar" : "Ver mi suscripción", link)),
+      footer: "Recibís este mail porque sos el dueño de una barbería en BarberApp.",
     }),
   };
 }

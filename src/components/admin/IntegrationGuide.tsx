@@ -120,7 +120,7 @@ export function IntegrationGuideButton({ guide }: { guide: GuideKey }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label={data.title}
-        className="tap flex h-8 w-8 items-center justify-center rounded-full bg-surface-low text-secondary transition-colors hover:text-primary"
+        className="tap relative flex h-8 w-8 items-center justify-center rounded-full bg-surface-low text-secondary transition-colors before:absolute before:-inset-1.5 hover:text-primary"
       >
         <Info size={16} aria-hidden />
       </button>

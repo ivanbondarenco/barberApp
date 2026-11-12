@@ -3,6 +3,7 @@ import { z } from "zod";
 import { DomainError } from "@/lib/commands";
 import { uid } from "@/lib/format";
 import { getAccount, visitorShop } from "@/server/auth";
+import { assertShopOperational } from "@/server/billing-access";
 import { assertGuestRate, guestAppointment, guestCheckout, guestResultPath, guestView, issueGuestToken } from "@/server/guest";
 import { errorResponse, json, phoneSchema, publicBaseUrl, readBody } from "@/server/http";
 import { reportError } from "@/server/monitor";
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
     if (await getAccount()) throw new DomainError("Ya tenés sesión: reservá desde la app.", 409);
     const shop = await visitorShop();
     if (!shop) throw new DomainError("Abrí el link de la barbería para reservar", 400);
+    // Local con la suscripción suspendida: se avisa antes de pedir nada (executeCommand lo frena igual).
+    assertShopOperational(await ensureSeeded(), { role: "invitado", shopId: shop.id });
     const input = await readBody(request, schema);
 
     const h = await headers();

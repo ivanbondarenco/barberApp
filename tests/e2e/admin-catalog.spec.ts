@@ -66,7 +66,10 @@ test("productos: alta con stock, edición y baja", async ({ page }) => {
 });
 
 test("reglas de seña: el dueño elige el porcentaje y puede desactivar el efectivo", async ({ page }) => {
-  await page.getByRole("tab", { name: "Seña" }).click();
+  // La seña se configura en Configuración; el catálogo solo lleva hasta ahí.
+  await page.getByRole("link", { name: /Configurar seña/ }).click();
+  await page.waitForURL(/admin\/configuracion/);
+  await expect(page.getByRole("tab", { name: "Señas" })).toHaveAttribute("aria-selected", "true");
   const options = page.getByRole("radiogroup", { name: "Porcentaje de seña" });
   await expect(options.getByRole("radio", { name: "50%" })).toHaveAttribute("aria-checked", "true");
 
@@ -106,6 +109,6 @@ test("la tienda del local muestra entregas y permite reponer stock", async ({ pa
   await page.goto("/admin/tienda");
   await expect(page.getByRole("link", { name: /Lucas Gómez/ })).toBeVisible();
   await expect(page.getByText("Beard Elixir Cedro", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "+5" }).first().click();
+  await page.getByRole("button", { name: /Sumar 5 al stock de Beard Elixir Cedro/ }).click();
   await expect.poll(async () => (await pageState(page)).state.products.find((p) => p.id === "p-elixir")?.stock).toBe(8);
 });

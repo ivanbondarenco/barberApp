@@ -9,19 +9,27 @@ import { Field } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { money, uid } from "@/lib/format";
-import { splitDeposit } from "@/lib/pricing";
+import { DEPOSIT_RATE_OPTIONS, depositPercent, serviceDepositRate, splitDeposit } from "@/lib/pricing";
 import { useAppStore } from "@/store/useAppStore";
 import type { Service } from "@/lib/types";
 import { deleteService, saveService } from "@/store/actions";
 
+/** "$ 11.000" → "11000": se acepta el precio como se escribe en Argentina. */
+const cleanPrice = (v: string) => v.replace(/[\s.$]/g, "");
+
 const schema = z.object({
   name: z.string().trim().min(3, "Mínimo 3 caracteres").max(40),
   description: z.string().trim().max(90),
-  price: z.string().regex(/^\d+$/, "Solo números").refine((v) => Number(v) >= 500, "Mínimo $500"),
+  price: z
+    .string()
+    .refine((v) => /^\d+$/.test(cleanPrice(v)), "Ingresá solo números")
+    .refine((v) => Number(cleanPrice(v)) >= 500, "Mínimo $500"),
   durationMin: z.string(),
   category: z.enum(["corte", "barba", "combo", "tratamiento"]),
   featured: z.boolean(),
   active: z.boolean(),
+  /** "local" = la seña del local; si no, la tasa propia del servicio ("0", "0.3"…). */
+  deposit: z.string(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -48,24 +56,28 @@ export function ServiceFormSheet({ open, service, onClose }: { open: boolean; se
       category: service?.category ?? "corte",
       featured: service?.featured ?? false,
       active: service?.active ?? true,
+      deposit: service?.depositRate !== undefined ? String(service.depositRate) : "local",
     });
   }, [open, service, reset]);
 
-  const [price, featured, active] = useWatch({ control, name: ["price", "featured", "active"] });
-  const depositRate = useAppStore((s) => s.depositSettings.rate);
-  const split = splitDeposit(Number(price) || 0, depositRate);
+  const [price, featured, active, deposit] = useWatch({ control, name: ["price", "featured", "active", "deposit"] });
+  const shopRate = useAppStore((s) => s.depositSettings.rate);
+  const ownRate = deposit && deposit !== "local" ? Number(deposit) : undefined;
+  const depositRate = serviceDepositRate({ depositRate: ownRate }, shopRate);
+  const split = splitDeposit(Number(cleanPrice(price ?? "")) || 0, depositRate);
 
   const onSubmit = async (v: Values) => {
     const next: Service = {
       id: service?.id ?? uid("s"),
       name: v.name,
       description: v.description,
-      price: Number(v.price),
+      price: Number(cleanPrice(v.price)),
       durationMin: Number(v.durationMin),
       category: v.category,
       featured: v.featured,
       tag: v.featured ? service?.tag ?? "Top" : undefined,
       active: v.active,
+      depositRate: v.deposit === "local" ? undefined : Number(v.deposit),
     };
     const result = await saveService(next, isNew);
     if (result.ok) onClose();
@@ -90,7 +102,7 @@ export function ServiceFormSheet({ open, service, onClose }: { open: boolean; se
           <input id="sv-desc" className="field" placeholder="Opcional" {...register("description")} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Precio" htmlFor="sv-price" error={errors.price?.message} hint={split.deposit ? `Seña 50%: ${money(split.deposit)}` : undefined}>
+          <Field label="Precio" htmlFor="sv-price" error={errors.price?.message} hint={split.deposit ? `Seña ${depositPercent(depositRate)}: ${money(split.deposit)}` : undefined}>
             <input id="sv-price" inputMode="numeric" className="field" placeholder="11000" {...register("price")} />
           </Field>
           <Field label="Duración" htmlFor="sv-dur">
@@ -103,6 +115,20 @@ export function ServiceFormSheet({ open, service, onClose }: { open: boolean; se
             </select>
           </Field>
         </div>
+        <Field
+          label="Seña"
+          htmlFor="sv-deposit"
+          hint={split.deposit ? `Se pide ${money(split.deposit)} al reservar.` : "Se reserva sin seña."}
+        >
+          <select id="sv-deposit" className="field" {...register("deposit")}>
+            <option value="local">La del local ({shopRate === 0 ? "sin seña" : depositPercent(shopRate)})</option>
+            {DEPOSIT_RATE_OPTIONS.map((r) => (
+              <option key={r} value={String(r)}>
+                {r === 0 ? "Sin seña para este servicio" : `${depositPercent(r)} para este servicio`}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Categoría" htmlFor="sv-cat">
           <select id="sv-cat" className="field" {...register("category")}>
             <option value="corte">Corte</option>

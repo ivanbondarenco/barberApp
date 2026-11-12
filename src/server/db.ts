@@ -149,6 +149,53 @@ CREATE TABLE IF NOT EXISTS guest_bookings (
   appointment_id TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+-- Suscripción de cada barbería a BarberApp. Las fechas deciden el estado (src/lib/billing.ts):
+-- no se guarda "suspendida", se calcula, así un pago o una prórroga la reactivan sola.
+CREATE TABLE IF NOT EXISTS shop_billing (
+  shop_id TEXT PRIMARY KEY,
+  trial_ends_at TEXT NOT NULL,
+  paid_until TEXT,
+  -- Suscripción automática de Mercado Pago (preapproval) y su último estado conocido.
+  mp_preapproval_id TEXT,
+  mp_preapproval_status TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS shop_billing_preapproval ON shop_billing (mp_preapproval_id);
+-- Cada cuota cobrada, por Mercado Pago o a mano. El id de los cobros de Mercado Pago es
+-- "mp:<id del pago autorizado>": así una notificación repetida no acredita dos meses.
+CREATE TABLE IF NOT EXISTS billing_payments (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  method TEXT NOT NULL,
+  paid_until TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS billing_payments_shop ON billing_payments (shop_id, created_at);
+-- Avisos de la suscripción ya mandados al dueño. "period" es el vencimiento al que se refiere:
+-- el mismo aviso sale una vez por vencimiento, y vuelve a salir si después vence otro.
+CREATE TABLE IF NOT EXISTS billing_notices (
+  shop_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  period TEXT NOT NULL,
+  sent_at TEXT NOT NULL,
+  PRIMARY KEY (shop_id, kind, period)
+);
+-- Avisos automáticos de WhatsApp enviados. Sirve para atar la respuesta del cliente ("1", "2" o
+-- el botón) al turno del que se le avisó. Solo la clave del celular (10 dígitos), sin texto.
+CREATE TABLE IF NOT EXISTS wa_outbox (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  appointment_id TEXT NOT NULL,
+  phone_key TEXT NOT NULL,
+  notice TEXT NOT NULL,
+  sent_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS wa_outbox_phone ON wa_outbox (phone_key, sent_at);
+-- Celulares que respondieron BAJA: no reciben más avisos automáticos de ningún local.
+CREATE TABLE IF NOT EXISTS wa_optout (phone_key TEXT PRIMARY KEY, created_at TEXT NOT NULL);
 -- Códigos de verificación por WhatsApp. Se guarda el hash, nunca el código.
 -- Hay a lo sumo uno vigente por (barbería, identificador, trámite): pedir otro reemplaza el anterior.
 CREATE TABLE IF NOT EXISTS otp_codes (
@@ -472,6 +519,26 @@ function migrateToV4(db: Database): void {
   `);
 }
 
+/** Días de prueba que reciben las barberías que ya existían al llegar la suscripción. */
+const BILLING_GRACE_ON_MIGRATION_DAYS = 30;
+
+/**
+ * v8: suscripción. Toda barbería sin fila en `shop_billing` (las que existían antes de esto)
+ * arranca con 30 días de prueba desde hoy: nadie se queda sin agenda por un deploy.
+ *
+ * Va después de SCHEMA porque necesita la tabla. Es idempotente: solo completa las que faltan,
+ * y las barberías nuevas ya nacen con su fila (createShop).
+ */
+function backfillBilling(db: Database): void {
+  const stamp = new Date();
+  const trialEnds = new Date(stamp.getTime() + BILLING_GRACE_ON_MIGRATION_DAYS * 86_400_000).toISOString();
+  db.run(
+    `INSERT INTO shop_billing (shop_id, trial_ends_at, updated_at)
+     SELECT id, ?, ? FROM shops WHERE id NOT IN (SELECT shop_id FROM shop_billing)`,
+    [trialEnds, stamp.toISOString()],
+  );
+}
+
 interface DbHolder {
   db: Database;
   mtimeMs: number;
@@ -491,6 +558,7 @@ async function open(): Promise<DbHolder> {
   // tablas con la forma nueva junto a las viejas y la migración no encontraría qué copiar.
   migrate(db);
   db.run(SCHEMA);
+  backfillBilling(db);
   const holder = { db, mtimeMs: exists ? fs.statSync(/*turbopackIgnore: true*/ DB_PATH).mtimeMs : 0 };
   (holder as DbHolder & { SQL: typeof SQL }).SQL = SQL;
   return holder;
@@ -513,6 +581,7 @@ export async function getDb(): Promise<Database> {
       holder.db = new SQL.Database(fs.readFileSync(/*turbopackIgnore: true*/ DB_PATH));
       migrate(holder.db);
       holder.db.run(SCHEMA);
+      backfillBilling(holder.db);
       holder.mtimeMs = mtimeMs;
     }
   }

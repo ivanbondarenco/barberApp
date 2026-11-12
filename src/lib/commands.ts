@@ -5,22 +5,33 @@
 import { fromISODate, hoursUntil } from "./dates";
 import { initials, phoneKey } from "./format";
 import {
-  CASH_DEPOSIT_DEADLINE_HOURS,
-  FREE_CANCELLATION_HOURS,
   HOLD_MINUTES,
   appointmentTotals,
   isDepositPaid,
   isValidDepositRate,
   NO_SHOW_DEPOSIT_LIMIT,
   noShowCount,
+  serviceDepositRate,
   splitDeposit,
 } from "./pricing";
 import { isValidCommission, payrollPreview } from "./payroll";
-import { buildSlots, cashDepositDeadline, CLIENT_BOOKING_DAYS, normalizeRanges, withinClientWindow } from "./schedule";
+import {
+  ANY_BARBER,
+  barberHours,
+  buildSlots,
+  cashDepositDeadline,
+  freeBarbersAt,
+  normalizeRanges,
+  rulesOf,
+  validateBookingRules,
+  windowLabel,
+  withinClientWindow,
+} from "./schedule";
 import type {
   Advance,
   Appointment,
   Barber,
+  BookingRules,
   BusinessHours,
   BusinessInfo,
   ClientProfile,
@@ -51,6 +62,17 @@ export interface DomainState {
   businessHours: BusinessHours;
   businessInfo: BusinessInfo;
   integrations: IntegrationSettings;
+  /** Reglas de reserva del local: paso entre turnos, plazos, anticipación. */
+  bookingRules: BookingRules;
+}
+
+/**
+ * Seña de un servicio en este local, con la tasa propia del servicio si la tiene.
+ * `price` permite calcularla sobre el precio fijado en un turno, que puede ser viejo.
+ */
+export function depositFor(state: Pick<DomainState, "services" | "depositSettings">, serviceId: string, price: number): number {
+  const service = state.services.find((s) => s.id === serviceId);
+  return splitDeposit(price, serviceDepositRate(service, state.depositSettings.rate)).deposit;
 }
 
 /**
@@ -149,6 +171,7 @@ export type Command =
   | { type: "settings.deposit"; allowCash?: boolean; rate?: number }
   | { type: "settings.hours"; dayIndex: number; patch: Partial<DayHours> }
   | { type: "settings.info"; patch: Partial<BusinessInfo> }
+  | { type: "settings.booking"; patch: Partial<BookingRules> }
   | { type: "demo.reset" };
 
 const fail = (message: string, status = 400): never => {
@@ -182,6 +205,7 @@ const OWNER_COMMANDS = new Set<Command["type"]>([
   "settings.deposit",
   "settings.hours",
   "settings.info",
+  "settings.booking",
   "advance.create",
   "advance.delete",
   "payout.create",
@@ -258,6 +282,8 @@ function assertSlot(
   state: DomainState,
   a: Pick<Appointment, "id" | "barberId" | "date" | "time" | "durationMin">,
   now: Date,
+  /** El staff carga turnos de paso: sin anticipación mínima y con el horario en curso. */
+  walkIn = false,
 ) {
   const free = buildSlots({
     date: a.date,
@@ -265,20 +291,61 @@ function assertSlot(
     durationMin: a.durationMin,
     appointments: state.appointments,
     blocks: state.blocks,
-    hours: state.businessHours,
+    hours: barberHours(
+      state.barbers.find((b) => b.id === a.barberId),
+      state.businessHours,
+    ),
     excludeAppointmentId: a.id,
     now,
+    walkIn,
+    rules: rulesOf(state),
   }).some((s) => s.time === a.time && s.available);
   if (!free) fail("Ese horario ya no está disponible. Elegí otro.", 409);
 }
 
 /**
- * El cliente reserva hasta dos semanas por adelantado; el staff, cuando quiera.
+ * El cliente reserva hasta los días que fije el local; el staff, cuando quiera.
  * Vive acá (y no solo en la pantalla) para que también la respete quien llame a la API.
  */
-function assertClientWindow(date: string, now: Date) {
-  if (!withinClientWindow(date, now))
-    fail(`Podés reservar hasta ${CLIENT_BOOKING_DAYS / 7} semanas por adelantado. Para una fecha más lejana, escribinos.`);
+function assertClientWindow(state: DomainState, date: string, now: Date) {
+  const { windowDays } = rulesOf(state);
+  if (!withinClientWindow(date, now, windowDays))
+    fail(`Podés reservar hasta ${windowLabel(windowDays)} por adelantado. Para una fecha más lejana, escribinos.`);
+}
+
+/** Valida el horario propio de un barbero: siete días, cada uno con franjas válidas. */
+function cleanSchedule(schedule: BusinessHours): BusinessHours {
+  if (!Array.isArray(schedule) || schedule.length !== 7) fail("El horario del barbero tiene que tener los 7 días");
+  return schedule.map((day) => {
+    if (day.closed) return { ...day, closed: true };
+    const ranges = normalizeRanges(day.ranges?.length ? day.ranges : [{ open: day.open, close: day.close }]);
+    if (typeof ranges === "string") fail(ranges);
+    const list = ranges as TimeRange[];
+    return { open: list[0].open, close: list[list.length - 1].close, closed: false, ranges: list };
+  });
+}
+
+/**
+ * "Me da igual el barbero": se asigna acá, con el estado real, el que tenga libre el horario
+ * y menos trabajo ese día. Si se resolviera en la pantalla, dos clientes podrían quedar con
+ * el mismo sillón.
+ */
+function resolveAnyBarber(state: DomainState, p: BookPayload, now: Date, walkIn: boolean): string {
+  const service = state.services.find((s) => s.id === p.serviceId);
+  if (!service) return fail("El servicio no está disponible");
+  const [first] = freeBarbersAt({
+    date: p.date,
+    time: p.time,
+    durationMin: service.durationMin,
+    appointments: state.appointments,
+    blocks: state.blocks,
+    barbers: state.barbers,
+    shopHours: state.businessHours,
+    now,
+    walkIn,
+    rules: rulesOf(state),
+  });
+  return first ?? fail("Ese horario ya no está disponible. Elegí otro.", 409);
 }
 
 const cleanText = (value: string | undefined, max: number) => value?.trim().slice(0, max) || undefined;
@@ -305,11 +372,17 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
 
   switch (command.type) {
     case "appointment.book": {
-      const p = command.payload;
+      let p = command.payload;
       if (state.appointments.some((a) => a.id === p.id)) fail("Turno duplicado", 409);
+      const rules = rulesOf(state);
+      if (p.barberId === ANY_BARBER) {
+        // Un barbero del staff no elige "cualquiera": agenda en su sillón.
+        if (actor.role === "barbero") p = { ...p, barberId: actor.barberId };
+        else p = { ...p, barberId: resolveAnyBarber(state, p, now, isStaffActor(actor)) };
+      }
       const service = state.services.find((s) => s.id === p.serviceId && s.active) ?? fail("El servicio no está disponible");
       const barber = state.barbers.find((b) => b.id === p.barberId && b.active) ?? fail("El barbero no está disponible");
-      const { deposit } = splitDeposit(service.price, state.depositSettings.rate);
+      const deposit = depositFor(state, service.id, service.price);
 
       assertOwnChair(actor, barber.id);
 
@@ -325,7 +398,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
 
       /** Reglas de la seña que elige quien reserva por su cuenta (cliente o invitado). */
       const selfServiceDeposit = (self: ClientProfile) => {
-        assertClientWindow(p.date, now);
+        assertClientWindow(state, p.date, now);
         if (deposit === 0) {
           // El local no pide seña: no hay nada que acreditar ni horario que retener.
           depositPaid = true;
@@ -334,7 +407,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           // Quien ya faltó sin avisar reserva pagando por adelantado: es la política publicada.
           if (noShowCount(state.appointments, self.id) >= NO_SHOW_DEPOSIT_LIMIT)
             fail("Por ausencias anteriores, este local te pide abonar la seña por adelantado");
-          const deadline = cashDepositDeadline(p.date, p.time, state.businessHours, CASH_DEPOSIT_DEADLINE_HOURS);
+          const deadline = cashDepositDeadline(p.date, p.time, state.businessHours, rules.cashDeadlineHours);
           if (deadline.getTime() <= now.getTime()) fail("Ya pasó el plazo para la seña en efectivo");
         } else if (method === "credito") {
           if (actor.role !== "cliente") fail("Ingresá con tu cuenta para usar tu crédito");
@@ -439,7 +512,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         createdAt: stamp,
         ...(holdUntil ? { holdUntil } : {}),
       };
-      assertSlot(state, appointment, now);
+      assertSlot(state, appointment, now, isStaffActor(actor));
       return { ...state, clients, appointments: [...state.appointments, appointment] };
     }
 
@@ -449,9 +522,10 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       const patch = command.patch;
       if (actor.role === "cliente") {
         if (patch.serviceId || patch.barberId || patch.notes !== undefined) fail("Solo podés cambiar la fecha y hora", 403);
-        if (hoursUntil(current.date, current.time, now) < FREE_CANCELLATION_HOURS)
-          fail(`Solo podés reprogramar hasta ${FREE_CANCELLATION_HOURS}h antes`);
-        if (patch.date) assertClientWindow(patch.date, now);
+        const { cancelHours } = rulesOf(state);
+        if (hoursUntil(current.date, current.time, now) < cancelHours)
+          fail(`Solo podés reprogramar hasta ${cancelHours}h antes`);
+        if (patch.date) assertClientWindow(state, patch.date, now);
       }
       const service = patch.serviceId
         ? state.services.find((s) => s.id === patch.serviceId) ?? fail("Servicio inexistente")
@@ -470,10 +544,10 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           : {}),
       };
       if (next.deposit.status === "pendiente") {
-        next.deposit = { ...next.deposit, amount: splitDeposit(next.servicePrice, state.depositSettings.rate).deposit };
+        next.deposit = { ...next.deposit, amount: depositFor(state, next.serviceId, next.servicePrice) };
       }
       const moved = next.date !== current.date || next.time !== current.time || next.barberId !== current.barberId;
-      if (moved) assertSlot(state, next, now);
+      if (moved) assertSlot(state, next, now, isStaffActor(actor));
       // Mismo horario con otra duración (p. ej. un turno en curso): solo se controla que no se superponga.
       else if (next.durationMin !== current.durationMin) assertSlot(state, next, fromISODate(next.date));
       if (next.date !== current.date || next.time !== current.time) {
@@ -486,7 +560,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       const current = ownAppointment(state, actor, command.id);
       if (current.status !== "confirmado") fail("El turno ya no está activo");
       // El staff puede cancelar sin cargo en cualquier momento; el cliente, hasta el plazo libre.
-      const inWindow = isStaffActor(actor) || hoursUntil(current.date, current.time, now) >= FREE_CANCELLATION_HOURS;
+      const inWindow = isStaffActor(actor) || hoursUntil(current.date, current.time, now) >= rulesOf(state).cancelHours;
       // Solo vuelve como crédito la plata efectivamente acreditada: `en_revision` no entró todavía.
       const credit = inWindow && isDepositPaid(current.deposit) ? current.deposit.amount : 0;
       return {
@@ -529,7 +603,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         appointments: replace(state.appointments, {
           ...current,
           deposit: {
-            amount: splitDeposit(current.servicePrice, state.depositSettings.rate).deposit,
+            amount: depositFor(state, current.serviceId, current.servicePrice),
             method: command.method,
             status: "abonada",
             paidAt: stamp,
@@ -556,7 +630,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
           ...current,
           deposit: {
             ...current.deposit,
-            amount: splitDeposit(current.servicePrice, state.depositSettings.rate).deposit,
+            amount: depositFor(state, current.serviceId, current.servicePrice),
             method: "transferencia",
             status: "en_revision",
             declaredAt: stamp,
@@ -688,6 +762,7 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       if (s.name.trim().length < 3) fail("El nombre del servicio es muy corto");
       if (!Number.isInteger(s.price) || s.price < 500) fail("Precio inválido");
       if (!Number.isInteger(s.durationMin) || s.durationMin < 15 || s.durationMin > 240) fail("Duración inválida");
+      if (s.depositRate !== undefined && !isValidDepositRate(s.depositRate)) fail("La seña tiene que estar entre 0% y 100%");
       return {
         ...state,
         services: replace(state.services, { ...s, name: s.name.trim(), description: s.description.trim() }),
@@ -723,7 +798,11 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       if (state.barbers.some((x) => x.chair === b.chair && x.id !== b.id)) fail(`El sillón #${b.chair} ya está asignado`);
       if (b.commission && !isValidCommission(b.commission))
         fail(b.commission.kind === "percent" ? "La comisión tiene que estar entre 0% y 100%" : "Monto de comisión inválido");
-      return { ...state, barbers: replace(state.barbers, { ...b, name: b.name.trim(), initials: initials(b.name) }) };
+      const schedule = b.schedule ? cleanSchedule(b.schedule) : undefined;
+      return {
+        ...state,
+        barbers: replace(state.barbers, { ...b, name: b.name.trim(), initials: initials(b.name), schedule }),
+      };
     }
 
     case "barber.delete": {
@@ -777,8 +856,11 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
       const b = command.block;
       if (b.end <= b.start) fail("La hora de fin debe ser posterior al inicio");
       if (!b.reason.trim()) fail("Indicá un motivo");
+      if (b.until !== undefined && b.until < b.date) fail("El último día tiene que ser después del primero");
+      const weekdays = b.weekdays?.length ? [...new Set(b.weekdays)].sort() : undefined;
+      if (weekdays?.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) fail("Día de la semana inválido");
       assertOwnChair(actor, b.barberId);
-      return { ...state, blocks: replace(state.blocks, b) };
+      return { ...state, blocks: replace(state.blocks, { ...b, reason: b.reason.trim().slice(0, 60), weekdays }) };
     }
 
     case "block.delete": {
@@ -897,6 +979,13 @@ export function applyCommand(state: DomainState, command: Command, actor: Actor,
         if (patch.name.length < 3) fail("Ingresá el nombre de la barbería");
       }
       return { ...state, businessInfo: { ...state.businessInfo, ...patch } };
+    }
+
+    case "settings.booking": {
+      const next = { ...rulesOf(state), ...command.patch };
+      const error = validateBookingRules(next);
+      if (error) fail(error);
+      return { ...state, bookingRules: next };
     }
 
     case "demo.reset":

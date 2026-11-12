@@ -11,6 +11,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { uid } from "@/lib/format";
 import type { ClientProfile } from "@/lib/types";
 import { deleteClient, saveClient } from "@/store/actions";
+import { useAppStore } from "@/store/useAppStore";
 
 const schema = z.object({
   name: z.string().trim().min(2, "Ingresá el nombre"),
@@ -37,6 +38,8 @@ interface ClientFormSheetProps {
 export function ClientFormSheet({ open, client, onClose, onDeleted }: ClientFormSheetProps) {
   const isNew = !client;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Borrar fichas es del dueño (`client.delete` está en OWNER_COMMANDS): al barbero ni se le ofrece.
+  const canDelete = useAppStore((s) => s.session?.role === "admin");
   const {
     register,
     handleSubmit,
@@ -99,7 +102,7 @@ export function ClientFormSheet({ open, client, onClose, onDeleted }: ClientForm
           <Field label="Nota interna" htmlFor="cl-notes" hint="Solo la ve el staff">
             <textarea id="cl-notes" rows={2} className="field resize-none" {...register("internalNotes")} />
           </Field>
-          {!isNew && (
+          {!isNew && canDelete && (
             <button type="button" onClick={() => setConfirmDelete(true)} className="tap btn-destructive mt-1">
               <Trash2 size={16} /> Eliminar cliente
             </button>

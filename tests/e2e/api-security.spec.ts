@@ -18,7 +18,12 @@ test("sin sesión: datos públicos y comandos rechazados", async ({ request }) =
   expect(res.headers()["cache-control"]).toContain("no-store");
   expect(body.session).toBeNull();
   expect(body.state.clients).toEqual([]);
-  expect(body.state.appointments).toEqual([]);
+  // Para reservar sin cuenta hace falta saber qué está ocupado, pero nunca de quién.
+  expect(
+    body.state.appointments.every(
+      (a: { clientName: string; clientPhone: string; clientId?: string }) => a.clientName === "" && a.clientPhone === "" && !a.clientId,
+    ),
+  ).toBe(true);
 
   const cmd = await request.post("/api/commands", { data: { command: { type: "demo.reset" } } });
   expect(cmd.status()).toBe(401);

@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Percent,
   ReceiptText,
+  ShieldCheck,
   ShoppingBag,
   Users,
 } from "lucide-react";
@@ -31,6 +32,9 @@ import { TRIAL_LABEL } from "@/lib/plan";
  */
 
 const LOGIN = "/auth/login";
+
+/** El mismo llamado en toda la portada: la prueba gratis, sin "demo" (es tu barbería de verdad). */
+const CTA = "Probar gratis";
 
 export function Landing() {
   return (
@@ -70,7 +74,7 @@ function Nav() {
           <SignupLink
             className="tap hidden rounded-xl bg-primary-bright px-4 py-2 text-sm font-semibold text-on-primary hover:bg-primary sm:inline-flex"
           >
-            Probar gratis
+            {CTA}
           </SignupLink>
         </div>
       </nav>
@@ -83,8 +87,8 @@ function Hero() {
     <section className="bg-night text-white">
       <div className="mx-auto max-w-6xl px-4 pb-20 pt-16 sm:px-6 sm:pt-24">
         <div className="mx-auto flex max-w-3xl flex-col items-center text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-[#34d399]/15 px-3.5 py-1.5 text-[13px] font-bold text-[#6ee7b7]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#6ee7b7]" aria-hidden />
+          <span className="inline-flex items-center gap-2 rounded-full bg-mint/15 px-3.5 py-1.5 text-[13px] font-bold text-mint">
+            <span className="h-1.5 w-1.5 rounded-full bg-mint" aria-hidden />
             {TRIAL_LABEL} gratis para tu barbería
           </span>
           <h1 className="mt-6 text-4xl font-extrabold leading-[1.04] tracking-tight sm:text-6xl">
@@ -100,7 +104,7 @@ function Hero() {
             <SignupLink
               className="tap inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-primary-bright px-6 text-[15px] font-bold text-on-primary hover:bg-primary sm:w-auto"
             >
-              Probar la demo gratis <ArrowRight size={18} aria-hidden />
+              {CTA} <ArrowRight size={18} aria-hidden />
             </SignupLink>
             <Link
               href={`${LOGIN}?tipo=cliente`}
@@ -216,9 +220,9 @@ const FEATURES = [
     text: "La seña se cobra al reservar y entra directo a tu cuenta. Menos turnos que no vienen.",
   },
   {
-    icon: MessageCircle,
-    title: "Verificación por WhatsApp",
-    text: "Cada cliente confirma su número con un código. Chau reservas falsas.",
+    icon: ShieldCheck,
+    title: "Menos ausencias",
+    text: "Quien falta sin avisar pierde la seña, y después de dos ausencias solo reserva pagándola por adelantado.",
   },
   {
     icon: CalendarDays,
@@ -319,7 +323,7 @@ const INCLUDED = [
   "Turnos online ilimitados",
   "Todo tu equipo de barberos",
   "Señas con tu Mercado Pago",
-  "Verificación por WhatsApp",
+  "Reglas de seña contra las ausencias",
   "Agenda, clientes, tienda y finanzas",
   "Comisiones y liquidación de sueldos",
   "Soporte por WhatsApp",
@@ -330,27 +334,27 @@ function Pricing() {
   return (
     <section id="precio" className="scroll-mt-16 border-b border-surface-high bg-surface-lowest">
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-2">
-        <SectionHead eyebrow="Precio" title={<>Probala {TRIAL_LABEL} gratis.<br />Después, lo que salen dos cortes.</>}>
-          Sin tarjeta para empezar. Pasada la prueba, pagás por mes el valor de 2 cortes de tu barbería: si tu corte
-          sale $10.000, son $20.000 por mes. Por transferencia, Mercado Pago o en efectivo.
+        <SectionHead eyebrow="Precio" title={<>Probala {TRIAL_LABEL} gratis.<br />Después, $25.000 por mes.</>}>
+          Sin tarjeta para empezar. Pasada la prueba, pagás $25.000 por mes, con todo incluido. Por transferencia,
+          Mercado Pago o en efectivo.
         </SectionHead>
 
         <div className="rounded-[26px] bg-night p-8 text-white shadow-[0_30px_70px_-30px_rgb(10_16_32/0.6)]">
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm font-semibold text-night-muted">El primer mes</p>
-            <span className="rounded-full bg-[#34d399]/15 px-2.5 py-1 text-xs font-bold text-[#6ee7b7]">Gratis</span>
+            <span className="rounded-full bg-mint/15 px-2.5 py-1 text-xs font-bold text-mint">Gratis</span>
           </div>
           <p className="mt-1.5 text-5xl font-extrabold tracking-tight">$0</p>
           <div className="mt-5 rounded-2xl bg-night-soft px-5 py-4">
             <p className="text-[13px] font-semibold text-night-muted">Después</p>
             <p className="text-2xl font-extrabold tracking-tight">
-              2 cortes <span className="text-[15px] font-semibold text-night-muted">/ mes</span>
+              $25.000 <span className="text-[15px] font-semibold text-night-muted">/ mes</span>
             </p>
           </div>
           <ul className="mt-6 space-y-3">
             {INCLUDED.map((item) => (
-              <li key={item} className="flex gap-2.5 text-sm text-[#dce4f7]">
-                <Check size={18} strokeWidth={2.5} className="shrink-0 text-[#6ee7b7]" aria-hidden />
+              <li key={item} className="flex gap-2.5 text-sm text-white/90">
+                <Check size={18} strokeWidth={2.5} className="shrink-0 text-mint" aria-hidden />
                 {item}
               </li>
             ))}
@@ -358,7 +362,7 @@ function Pricing() {
           <SignupLink
             className="tap mt-7 inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-primary-bright px-6 text-[15px] font-bold text-on-primary hover:bg-primary"
           >
-            Empezar mi prueba gratis <ArrowRight size={18} aria-hidden />
+            {CTA} <ArrowRight size={18} aria-hidden />
           </SignupLink>
         </div>
       </div>
@@ -389,7 +393,7 @@ const FAQ = [
   },
   {
     q: `¿Cuánto cuesta después del ${TRIAL_LABEL} de prueba?`,
-    a: "El valor de 2 cortes de tu barbería por mes, por transferencia, Mercado Pago o en efectivo. Sin comisiones por turno ni por seña.",
+    a: "$25.000 por mes, por transferencia, Mercado Pago o en efectivo. Sin comisiones por turno ni por seña.",
   },
 ];
 
@@ -427,7 +431,7 @@ function FinalCta() {
         <SignupLink
           className="tap mt-8 inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-primary-bright px-8 text-[15px] font-bold text-on-primary hover:bg-primary"
         >
-          Probar la demo gratis <ArrowRight size={18} aria-hidden />
+          {CTA} <ArrowRight size={18} aria-hidden />
         </SignupLink>
       </div>
     </section>

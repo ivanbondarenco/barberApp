@@ -9,7 +9,7 @@ import {
   seedProducts,
   seedServices,
 } from "@/lib/mock-data";
-import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
+import { DEFAULT_BOOKING_RULES, DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
 
 /** Lunes 14/09/2026 a las 09:00 (hora local). */
 export const MONDAY_9AM = new Date(2026, 8, 14, 9, 0, 0);
@@ -42,6 +42,7 @@ export function seedState(): DomainState {
     products: seedProducts,
     appointments: buildSeedAppointments(),
     blocks: buildSeedBlocks(),
+    bookingRules: DEFAULT_BOOKING_RULES,
     advances: [],
     payouts: [],
     depositSettings: { allowCash: true, rate: 0.5 },

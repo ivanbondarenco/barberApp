@@ -87,6 +87,8 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     // La barbería de al lado sigue con las suyas, intactas.
     const other = await newDevice(page.context().browser()!);
     await openShop(other.page);
+    // El link del local abre la reserva sin cuenta: el ingreso está aparte.
+    await other.page.goto("/auth/login");
     await fillLogin(other.page, "barbero", ADMIN.email, ADMIN.password);
     await other.page.waitForURL("**/admin/agenda");
     const theirs = (await pageState(other.page)).state.services;
@@ -148,7 +150,6 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     await page.getByLabel("Email").fill("julia.paz@example.com");
     await page.getByLabel("Celular").fill("+54 9 11 8888 7777");
     await page.getByLabel("Contraseña", { exact: true }).fill("julia-2026");
-    await page.getByLabel("Repetir contraseña").fill("julia-2026");
     await page.getByLabel(/Acepto las/).check();
     await page.getByRole("button", { name: "Crear cuenta" }).click();
 
@@ -156,9 +157,9 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     await page.waitForURL("**/cliente/barberias");
     const lista = page.getByRole("list", { name: "Barberías" });
     await lista.getByRole("button", { name: /D\.S Studio/ }).click();
-    await expect(lista.getByRole("button", { name: /D\.S Studio/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(lista.getByRole("button", { name: /Dejar D.S Studio/ })).toBeVisible();
     await lista.getByRole("button", { name: new RegExp(NUEVA.name) }).click();
-    await expect(lista.getByRole("button", { name: new RegExp(NUEVA.name) })).toHaveAttribute("aria-pressed", "true");
+    await expect(lista.getByRole("button", { name: `Dejar ${NUEVA.name}` })).toBeVisible();
     await page.getByRole("button", { name: "Continuar" }).click();
     await page.waitForURL("**/cliente/reservar");
 
@@ -179,11 +180,11 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     await context.close();
   });
 
-  test("el link de una barbería lleva al ingreso parado en ella", async ({ browser }) => {
+  test("el link de una barbería lleva a reservar sin cuenta, parado en ella", async ({ browser }) => {
     const { context, page } = await newDevice(browser);
     await openShop(page, NUEVA.slug);
-    await page.waitForURL("**/auth/login**");
-    await expect(page.getByText(`Reservá tu turno en ${NUEVA.name}`)).toBeVisible();
+    await page.waitForURL("**/reservar");
+    await expect(page.getByText(NUEVA.name).first()).toBeVisible();
     await context.close();
   });
 
@@ -191,6 +192,7 @@ test.describe.serial("alta y aislamiento de barberías", () => {
     const { context, page } = await newDevice(browser);
     await page.goto("/b/no-existe-esta-barberia");
     await expect(page.getByRole("heading", { name: "Ingresá a tu cuenta" })).toBeVisible();
+    await expect(page.getByText(/No encontramos esa barbería/)).toBeVisible();
     await context.close();
   });
 });

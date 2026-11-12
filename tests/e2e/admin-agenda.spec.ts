@@ -19,7 +19,7 @@ test("carga un turno manual, registra la seña, suma un producto y cobra", async
   await form.getByRole("button", { name: /^Agendar/ }).click();
   await expect(form.getByText(/Elegí servicio, día y horario|Ingresá el nombre/)).toBeVisible();
 
-  await form.getByRole("tab", { name: "Cliente sin app" }).click();
+  await form.getByRole("tab", { name: "Cliente nuevo" }).click();
   await form.getByLabel("Cliente", { exact: true }).fill("Walk In Test");
   await form.getByLabel("Celular (opcional)").fill("+54 9 11 1234 5678");
   await form.getByLabel("Servicio").selectOption({ label: "Corte Clásico Tijera" });
@@ -33,7 +33,9 @@ test("carga un turno manual, registra la seña, suma un producto y cobra", async
   expect(state.clients.some((c) => c.name === "Walk In Test")).toBe(true);
 
   await page.goto(`/admin/turno/${appointment.id}`);
-  await page.getByRole("button", { name: "Registrar seña $4.750" }).click();
+  // Cobrar todo de una es la acción principal; registrar solo la seña queda como alternativa.
+  await expect(page.getByRole("button", { name: "Cobrar $9.500" })).toBeVisible();
+  await page.getByRole("button", { name: "Registrar solo la seña ($4.750)" }).click();
   await page.getByRole("dialog", { name: "Registrar seña" }).getByRole("button", { name: "Registrar $4.750" }).click();
   await expect(page.getByText("Abonada · Efectivo")).toBeVisible();
 
@@ -64,7 +66,7 @@ test("edita y cancela un turno; luego lo elimina", async ({ page }) => {
   await expect(page.getByText("Prefiere barba corta")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Combo Corte + Barba Clásica" }).or(page.getByText("Combo Corte + Barba Clásica").first())).toBeVisible();
 
-  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("button", { name: "Cancelar turno", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancelar turno" }).click();
   await expect(page.getByText("Cancelado").first()).toBeVisible();
 
@@ -84,8 +86,8 @@ test("bloquea un horario y lo vuelve a liberar", async ({ page }) => {
   await sheet.getByRole("button", { name: "Bloquear 16:00–17:00" }).click();
   await expect(page.getByRole("main").getByRole("button", { name: /Capacitación/ })).toBeVisible();
 
+  // Se quita sin confirmar: el aviso ofrece deshacer.
   await page.getByRole("main").getByRole("button", { name: /Capacitación/ }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Quitar" }).click();
   await expect(page.getByRole("main").getByRole("button", { name: /Capacitación/ })).toBeHidden();
   expect((await pageState(page)).state.blocks.some((b) => b.reason === "Capacitación")).toBe(false);
 });
@@ -97,7 +99,10 @@ test("finanzas muestra lo cobrado y los movimientos", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Mateo Rossi/ })).toBeVisible();
 });
 
-test("la agenda muestra el mes entero y cambia de día y de mes", async ({ page }) => {
+test("la agenda muestra la semana y, a pedido, el mes entero", async ({ page }) => {
+  // En el teléfono arranca con la semana compacta: 7 días.
+  await expect(page.getByRole("radiogroup", { name: "Semana" }).getByRole("radio")).toHaveCount(7);
+  await page.getByRole("button", { name: "Ver mes" }).click();
   const days = page.getByRole("radiogroup", { name: "Día" }).getByRole("radio");
   // Un mes tiene 28 días o más: el calendario los muestra todos.
   expect(await days.count()).toBeGreaterThanOrEqual(28);
@@ -112,6 +117,7 @@ test("la agenda muestra el mes entero y cambia de día y de mes", async ({ page 
 });
 
 test("al elegir una fecha aparecen las acciones de ese día", async ({ page }) => {
+  await page.getByRole("button", { name: "Ver mes" }).click();
   const calendar = page.getByRole("radiogroup", { name: "Día" });
 
   // Un día que ya pasó queda solo para consulta (salvo que hoy sea el primero del mes).
@@ -159,7 +165,7 @@ test("agenda a un cliente de la app eligiéndolo del buscador", async ({ page })
 test("un cliente sin app se carga solo con el nombre y no abre ficha", async ({ page }) => {
   await page.getByRole("button", { name: "Turno", exact: true }).click();
   const form = page.getByRole("dialog", { name: "Nuevo turno" });
-  await form.getByRole("tab", { name: "Cliente sin app" }).click();
+  await form.getByRole("tab", { name: "Cliente nuevo" }).click();
   await form.getByLabel("Cliente", { exact: true }).fill("Pasó a preguntar");
   await form.getByLabel("Servicio").selectOption({ label: "Corte Clásico Tijera" });
   const time = await pickFirstSlot(form);

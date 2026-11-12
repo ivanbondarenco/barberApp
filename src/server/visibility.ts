@@ -1,6 +1,7 @@
 import "server-only";
 import type { Actor, DomainState } from "@/lib/commands";
 import { todayISO } from "@/lib/dates";
+import { blockIsCurrent } from "@/lib/schedule";
 import type { Appointment, Barber } from "@/lib/types";
 
 /**
@@ -67,7 +68,8 @@ export function stateForActor(state: DomainState, actor: Actor | null): DomainSt
       .map(({ phone: _phone, accountIdentifier: _ident, commission: _commission, ...b }) => b),
     products: state.products.filter((p) => p.active),
     appointments: [],
-    blocks: state.blocks.filter((b) => b.date >= today).map((b) => ({ ...b, reason: "" })),
+    // Los que se repiten o duran varios días pueden haber empezado antes de hoy y seguir vigentes.
+    blocks: state.blocks.filter((b) => blockIsCurrent(b, today)).map((b) => ({ ...b, reason: "" })),
     advances: [],
     payouts: [],
   };

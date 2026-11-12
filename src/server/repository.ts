@@ -15,8 +15,10 @@ import {
 } from "@/lib/mock-data";
 import { initials, phoneKey, uid } from "@/lib/format";
 import { DEFAULT_DEPOSIT_RATE } from "@/lib/pricing";
-import { DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
+import { DEFAULT_BOOKING_RULES, DEFAULT_BUSINESS_HOURS } from "@/lib/schedule";
 import type { ClientProfile, Shop } from "@/lib/types";
+import { TRIAL_DAYS } from "@/lib/billing";
+import { assertShopOperational } from "./billing-access";
 import { testModeAllowed } from "./config";
 import { hashPassword, normalizeIdentifier } from "./crypto";
 import { getDb, LEGACY_SHOP_ID, persist, queryAll, queryOne, transaction } from "./db";
@@ -34,7 +36,7 @@ const TABLES: Record<Collection, string> = {
   advances: "advances",
   payouts: "payouts",
 };
-const SETTINGS = ["depositSettings", "businessHours", "businessInfo"] as const;
+const SETTINGS = ["depositSettings", "businessHours", "businessInfo", "bookingRules"] as const;
 
 /** Un estado cacheado por barbería; la versión de cada una avanza por su lado. */
 const cache = new Map<string, { version: number; state: DomainState }>();
@@ -108,6 +110,8 @@ function readState(db: Database, shopId: string): DomainState {
     depositSettings: setting("depositSettings") ?? { allowCash: true, rate: DEFAULT_DEPOSIT_RATE },
     businessHours: setting("businessHours") ?? DEFAULT_BUSINESS_HOURS,
     businessInfo: setting("businessInfo") ?? seedBusinessInfo,
+    // Se completan con el default: una base vieja no las tiene, o le falta una regla nueva.
+    bookingRules: { ...DEFAULT_BOOKING_RULES, ...(setting<Partial<DomainState["bookingRules"]>>("bookingRules") ?? {}) },
     // Derivado, nunca persistido: solo dice si la barbería tiene credenciales, jamás cuáles.
     integrations: {
       mercadopagoReady: hasSecret(db, shopId, "mp_access_token"),
@@ -198,6 +202,7 @@ function emptyState(): DomainState {
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
     integrations: { mercadopagoReady: false, whatsappReady: false },
+    bookingRules: DEFAULT_BOOKING_RULES,
   };
 }
 
@@ -215,6 +220,7 @@ function seedData(): DomainState {
     businessHours: DEFAULT_BUSINESS_HOURS,
     businessInfo: seedBusinessInfo,
     integrations: { mercadopagoReady: false, whatsappReady: false },
+    bookingRules: DEFAULT_BOOKING_RULES,
   };
 }
 
@@ -377,6 +383,12 @@ export async function createShop(input: NewShopInput): Promise<{ shop: Shop; use
 
   transaction(db, () => {
     db.run("INSERT INTO shops (id, slug, name, created_at) VALUES (?, ?, ?, ?)", [shopId, slug, name, stamp]);
+    // Prueba gratis desde el alta, sin tarjeta: el estado de la suscripción sale de esta fecha.
+    db.run("INSERT INTO shop_billing (shop_id, trial_ends_at, updated_at) VALUES (?, ?, ?)", [
+      shopId,
+      new Date(Date.parse(stamp) + TRIAL_DAYS * 86_400_000).toISOString(),
+      stamp,
+    ]);
     writeState(
       db,
       shopId,
@@ -485,6 +497,8 @@ export async function executeCommand(actor: Actor, command: Command): Promise<{ 
   const stamp = new Date().toISOString();
   // El reset se resuelve acá (no pasa por applyCommand), así que valida el permiso explícitamente.
   if (command.type === "demo.reset" && actor.role !== "admin") throw new DomainError("Acción reservada al staff", 403);
+  // Suscripción suspendida: se corta acá, el único lugar por donde pasan todos los comandos.
+  assertShopOperational(db, actor, command);
 
   const version = transaction(db, () => {
     let next: DomainState;
@@ -549,7 +563,7 @@ function mailAboutAppointment(db: Database, shopId: string, command: Command, pr
       WHERE m.shop_id = ? AND m.client_id = ?`,
     [shopId, appointment.clientId],
   )?.identifier;
-  notifyAppointment(kind, appointment, next.businessInfo, to?.includes("@") ? to : undefined);
+  notifyAppointment(kind, appointment, next.businessInfo, to?.includes("@") ? to : undefined, next.bookingRules.cancelHours);
 }
 
 /** Escritura directa usada por autenticación y credenciales (usuarios, sesiones, secretos). */

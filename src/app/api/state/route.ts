@@ -1,6 +1,7 @@
 import { getAccount, visitorShop } from "@/server/auth";
 import { errorResponse, json } from "@/server/http";
-import { listShops, loadState } from "@/server/repository";
+import { shopBillingStatus } from "@/server/billing-access";
+import { ensureSeeded, listShops, loadState } from "@/server/repository";
 import { stateForActor } from "@/server/visibility";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,10 @@ export const dynamic = "force-dynamic";
  *
  * `shops` (todas las barberías publicadas) va cuando hay que elegir: sin barbería activa, o
  * para un cliente, que puede sumarse a más.
+ *
+ * `billing.suspended` dice si el local tiene la suscripción suspendida: así las pantallas de
+ * reserva pueden avisarlo de entrada en vez de fallar al confirmar. Va fuera del estado de
+ * dominio, igual que la sesión.
  */
 export async function GET(request: Request) {
   try {
@@ -20,15 +25,17 @@ export async function GET(request: Request) {
     if (!shop) return json({ version: 0, session: account?.session ?? null, shop: null, shops });
 
     const { state, version } = await loadState(shop.id);
+    const billing = { suspended: shopBillingStatus(await ensureSeeded(), shop.id) === "suspended" };
     const known = Number(new URL(request.url).searchParams.get("v"));
     if (known && known === version) {
-      return json({ unchanged: true, version, session: account?.session ?? null, shop, shops });
+      return json({ unchanged: true, version, session: account?.session ?? null, shop, shops, billing });
     }
     return json({
       version,
       session: account?.session ?? null,
       shop,
       shops,
+      billing,
       state: stateForActor(state, account?.actor ?? null),
     });
   } catch (error) {

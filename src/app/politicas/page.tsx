@@ -13,8 +13,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { PublicShell } from "@/components/layout/PublicShell";
-import { CASH_DEPOSIT_DEADLINE_HOURS, FREE_CANCELLATION_HOURS, NO_SHOW_DEPOSIT_LIMIT } from "@/lib/pricing";
+import { depositPercent, NO_SHOW_DEPOSIT_LIMIT } from "@/lib/pricing";
 import { useAppStore } from "@/store/useAppStore";
+import { useBookingRules } from "@/store/useRules";
 
 interface Policy {
   icon: LucideIcon;
@@ -30,8 +31,11 @@ interface Policy {
 function buildPolicies(opts: {
   rate: number;
   allowCash: boolean;
+  mercadopagoReady: boolean;
   transferAlias: string;
   noShowLimit: number;
+  cancelHours: number;
+  cashHours: number;
 }): Policy[] {
   const pct = Math.round(opts.rate * 100);
   const list: Policy[] = [];
@@ -40,7 +44,7 @@ function buildPolicies(opts: {
     opts.rate > 0
       ? {
           icon: Wallet,
-          title: `Seña del ${pct}%`,
+          title: `Seña del ${depositPercent(opts.rate)}`,
           text: `Para confirmar el turno se abona el ${pct}% del valor del servicio. El ${100 - pct}% restante se abona en el sillón.`,
         }
       : {
@@ -51,16 +55,24 @@ function buildPolicies(opts: {
   );
 
   if (opts.rate > 0) {
+    // Solo los medios que el local tiene andando: Mercado Pago conectado, transferencia (para quien
+    // reserva con cuenta, que es quien puede avisarla) y efectivo si lo habilitó.
+    const methods = [
+      opts.mercadopagoReady && "Mercado Pago (dinero en cuenta, débito o crédito)",
+      `transferencia${opts.transferAlias ? ` al alias ${opts.transferAlias}` : ""}, reservando con tu cuenta`,
+      opts.allowCash && "efectivo en el local",
+    ].filter((m): m is string => !!m);
+    const listText = methods.length > 1 ? `${methods.slice(0, -1).join(", ")} o ${methods.at(-1)}` : methods[0];
     list.push({
       icon: CreditCard,
       title: "Medios de pago",
-      text: `Mercado Pago (dinero en cuenta, débito o crédito) o transferencia${opts.transferAlias ? ` al alias ${opts.transferAlias}` : ""}. En el local también aceptamos efectivo.`,
+      text: `La seña se puede abonar con ${listText}.`,
     });
     if (opts.allowCash) {
       list.push({
         icon: Banknote,
         title: "Seña en efectivo",
-        text: `Podés abonarla en recepción hasta ${CASH_DEPOSIT_DEADLINE_HOURS} horas antes del turno. Si no se abona en ese plazo, el horario se libera.`,
+        text: `Podés abonarla en recepción hasta ${opts.cashHours} horas antes del turno. Si no se abona en ese plazo, el horario se libera.`,
       });
     }
   }
@@ -68,7 +80,7 @@ function buildPolicies(opts: {
   list.push({
     icon: CalendarClock,
     title: "Reprogramación",
-    text: `Sin cargo hasta ${FREE_CANCELLATION_HOURS} horas antes, desde Mis Turnos.${opts.rate > 0 ? " La seña se mantiene para el nuevo horario." : ""}`,
+    text: `Sin cargo hasta ${opts.cancelHours} horas antes, desde Mis Turnos.${opts.rate > 0 ? " La seña se mantiene para el nuevo horario." : ""}`,
   });
 
   if (opts.rate > 0) {
@@ -76,7 +88,7 @@ function buildPolicies(opts: {
       {
         icon: CircleX,
         title: "Cancelación",
-        text: `Con ${FREE_CANCELLATION_HOURS} horas o más de anticipación, la seña abonada queda como crédito a favor. Con menos anticipación, la seña no se reintegra.`,
+        text: `Con ${opts.cancelHours} horas o más de anticipación, la seña abonada queda como crédito a favor. Con menos anticipación, la seña no se reintegra.`,
       },
       {
         icon: PiggyBank,
@@ -109,10 +121,16 @@ function buildPolicies(opts: {
 export default function PoliticasPage() {
   const session = useAppStore((s) => s.session);
   const { allowCash, rate } = useAppStore((s) => s.depositSettings);
+  const mercadopagoReady = useAppStore((s) => s.integrations.mercadopagoReady);
+  const hasShop = useAppStore((s) => !!s.shop);
   const info = useAppStore((s) => s.businessInfo);
+  const rules = useBookingRules();
   const policies = buildPolicies({
+    cancelHours: rules.cancelHours,
+    cashHours: rules.cashDeadlineHours,
     rate,
     allowCash,
+    mercadopagoReady,
     transferAlias: info.transferAlias,
     noShowLimit: NO_SHOW_DEPOSIT_LIMIT,
   });
@@ -120,15 +138,19 @@ export default function PoliticasPage() {
   return (
     <PublicShell
       title="Políticas de Señas"
-      fallbackHref={session?.role === "admin" ? "/admin/agenda" : session ? "/cliente/perfil" : "/auth/login"}
+      fallbackHref={session?.role === "admin" ? "/admin/agenda" : session ? "/cliente/perfil" : hasShop ? "/reservar" : "/auth/login"}
       footer={
-        <Link href={session?.role === "cliente" ? "/cliente/reservar" : session ? "/admin/agenda" : "/auth/login"} className="tap btn-primary">
-          {session?.role === "cliente" ? "Reservar turno" : session ? "Volver a la agenda" : "Iniciar sesión"}
+        // Sin sesión se reserva sin cuenta, desde el link del local: no hace falta ingresar.
+        <Link
+          href={session?.role === "cliente" ? "/cliente/reservar" : session ? "/admin/agenda" : hasShop ? "/reservar" : "/auth/login"}
+          className="tap btn-primary"
+        >
+          {session?.role === "cliente" || (!session && hasShop) ? "Reservar turno" : session ? "Volver a la agenda" : "Iniciar sesión"}
         </Link>
       }
     >
       <div className="flex flex-col gap-2 px-4 py-3">
-        <p className="rounded-xl bg-primary px-3 py-2.5 text-xs leading-relaxed text-primary-fixed">
+        <p className="rounded-xl bg-primary px-3 py-2.5 text-[13px] leading-relaxed text-primary-fixed">
           {rate > 0
             ? "Trabajamos con turnos exclusivos por sillón. La seña garantiza tu lugar y se descuenta del total del servicio."
             : "Trabajamos con turnos exclusivos por sillón. Reservá tu horario y aboná al finalizar el servicio."}
@@ -140,8 +162,8 @@ export default function PoliticasPage() {
                 <Icon size={16} />
               </span>
               <div>
-                <h2 className="text-[13px] font-bold leading-tight">{title}</h2>
-                <p className="mt-0.5 text-[11px] leading-snug text-secondary">{text}</p>
+                <h2 className="text-sm font-bold leading-tight">{title}</h2>
+                <p className="mt-0.5 text-[13px] leading-snug text-secondary">{text}</p>
               </div>
             </li>
           ))}

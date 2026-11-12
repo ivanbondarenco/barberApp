@@ -1,7 +1,7 @@
 "use client";
 
 import * as m from "motion/react-m";
-import { CalendarPlus, ChevronRight, NotebookPen, Pencil, Phone, Smartphone, UserX } from "lucide-react";
+import { CalendarPlus, ChevronRight, MessageCircle, NotebookPen, Pencil, Phone, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -16,6 +16,8 @@ import { initials, money, whatsappLink } from "@/lib/format";
 import { fadeUp, listItem } from "@/lib/motion";
 import { useAppStore } from "@/store/useAppStore";
 
+const HISTORY_PAGE = 12;
+
 export default function FichaClientePage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
@@ -24,6 +26,8 @@ export default function FichaClientePage() {
   const info = useAppStore((s) => s.businessInfo);
   const [editOpen, setEditOpen] = useState(false);
   const [bookOpen, setBookOpen] = useState(false);
+  /** El historial arranca con los últimos turnos y se amplía a pedido. */
+  const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE);
 
   const summary = useMemo(() => (profile ? summarizeClient(profile, appointments) : null), [profile, appointments]);
 
@@ -54,7 +58,7 @@ export default function FichaClientePage() {
         </p>
         <div className="mt-4 grid w-full grid-cols-4 gap-2">
           <Action icon={Phone} label="Llamar" href={`tel:${profile.phone.replace(/\s/g, "")}`} />
-          <Action icon={Smartphone} label="WhatsApp" href={whatsappLink(profile.phone, `Hola ${profile.name.split(" ")[0]}, te escribimos de ${info.name}.`)} />
+          <Action icon={MessageCircle} label="WhatsApp" href={whatsappLink(profile.phone, `Hola ${profile.name.split(" ")[0]}, te escribimos de ${info.name}.`)} />
           <Action icon={CalendarPlus} label="Turno" onClick={() => setBookOpen(true)} />
           <Action icon={Pencil} label="Editar" onClick={() => setEditOpen(true)} />
         </div>
@@ -100,7 +104,7 @@ export default function FichaClientePage() {
           <p className="rounded-2xl bg-surface-lowest px-4 py-5 text-center text-sm text-secondary shadow-xs">Todavía no tiene turnos.</p>
         ) : (
           <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
-            {summary.appointments.slice(0, 12).map((a, i) => (
+            {summary.appointments.slice(0, historyLimit).map((a, i) => (
               <m.li key={a.id} custom={i} variants={listItem} initial="hidden" animate="show">
                 <Link href={`/admin/turno/${a.id}`} transitionTypes={[...NAV.forward]} className="row">
                   <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-surface-low leading-none">
@@ -113,6 +117,15 @@ export default function FichaClientePage() {
               </m.li>
             ))}
           </ul>
+        )}
+        {summary.appointments.length > historyLimit && (
+          <button
+            type="button"
+            onClick={() => setHistoryLimit((n) => n + HISTORY_PAGE)}
+            className="tap mt-2 flex min-h-11 w-full items-center justify-center rounded-2xl text-sm font-semibold text-primary hover:bg-surface-low"
+          >
+            Ver más ({summary.appointments.length - historyLimit})
+          </button>
         )}
       </Section>
 

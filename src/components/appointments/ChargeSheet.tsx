@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { cn } from "@/lib/cn";
 import { money, paymentMethodLabel } from "@/lib/format";
-import { appointmentTotals } from "@/lib/pricing";
+import { appointmentDepositPercent, appointmentTotals } from "@/lib/pricing";
 import type { Appointment, PaymentMethod } from "@/lib/types";
 import { chargeAppointment, registerDeposit } from "@/store/actions";
 
@@ -62,7 +62,7 @@ export function ChargeSheet({
       {t && appointment && (
         <div className="flex flex-col gap-4">
           <div className="rounded-2xl bg-surface-low p-4 text-center">
-            <p className="text-[13px] text-secondary">{mode === "deposit" ? "Seña 50%" : "A cobrar ahora"}</p>
+            <p className="text-[13px] text-secondary">{mode === "deposit" ? `Seña ${appointmentDepositPercent(appointment)}` : "A cobrar ahora"}</p>
             <p className="text-4xl font-bold tracking-tight tabular-nums text-primary">{money(amount)}</p>
             {mode === "balance" && (
               <p className="mt-1 text-xs text-secondary">
@@ -70,6 +70,10 @@ export function ChargeSheet({
                 {t.depositPaid > 0 && ` − seña ${money(t.depositPaid)}`}
                 {t.products > 0 && ` + productos ${money(t.products)}`}
               </p>
+            )}
+            {/* El cobro completo acredita también la seña pendiente, con el mismo medio de pago. */}
+            {mode === "balance" && t.depositPaid === 0 && t.deposit > 0 && (
+              <p className="mt-1 text-xs font-medium text-secondary">Incluye la seña de {money(t.deposit)}, que no se había abonado.</p>
             )}
           </div>
           <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Medio de pago">

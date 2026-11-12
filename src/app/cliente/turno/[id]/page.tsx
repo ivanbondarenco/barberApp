@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { CalendarClock, CalendarPlus, ChevronDown, CircleX, CreditCard, MessageSquareText, Navigation, Package } from "lucide-react";
+import { CalendarClock, CalendarPlus, ChevronDown, CircleX, Clock, CreditCard, MessageSquareText, Navigation, Package } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,7 @@ import { RateAppointment } from "@/components/appointments/RateAppointment";
 import { RescheduleSheet } from "@/components/appointments/RescheduleSheet";
 import { PayDepositSheet } from "@/components/booking/PayDepositSheet";
 import { StatusChip } from "@/components/appointments/StatusChip";
+import { depositDeadline, formatDeadline, freeChangeUntil, timeLeft } from "@/components/appointments/useClientAppointments";
 import { NAV, Page } from "@/components/motion/Page";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/States";
@@ -19,10 +20,10 @@ import { cn } from "@/lib/cn";
 import { hoursUntil, longDate } from "@/lib/dates";
 import { money, paymentMethodLabel, whatsappLink } from "@/lib/format";
 import { ease, fadeUp } from "@/lib/motion";
-import { appointmentTotals, FREE_CANCELLATION_HOURS } from "@/lib/pricing";
+import { appointmentDepositPercent, appointmentTotals } from "@/lib/pricing";
 import { cancelAppointment } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
-import { toast } from "@/store/useToast";
+import { useBookingRules } from "@/store/useRules";
 
 export default function ClienteTurnoPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +31,8 @@ export default function ClienteTurnoPage() {
   const appointment = useAppStore((s) => s.appointments.find((a) => a.id === id && a.clientId === clientId));
   const barber = useAppStore((s) => s.barbers.find((b) => b.id === appointment?.barberId));
   const info = useAppStore((s) => s.businessInfo);
+  const hours = useAppStore((s) => s.businessHours);
+  const rules = useBookingRules();
 
   const [rescheduling, setRescheduling] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -54,16 +57,18 @@ export default function ClienteTurnoPage() {
 
   const t = appointmentTotals(appointment);
   const active = appointment.status === "confirmado";
-  const inWindow = hoursUntil(appointment.date, appointment.time) >= FREE_CANCELLATION_HOURS;
+  const inWindow = hoursUntil(appointment.date, appointment.time) >= rules.cancelHours;
   const depositPaid = appointment.deposit.status === "abonada";
   const underReview = appointment.deposit.status === "en_revision";
-  // La seña en efectivo se paga en el local; las demás se pueden saldar desde acá.
-  const canPayOnline = active && !depositPaid && !underReview && appointment.deposit.method !== "efectivo";
+  // Aunque la haya elegido en efectivo, la seña se puede adelantar online desde acá.
+  const canPayOnline = active && !depositPaid && !underReview && t.deposit > 0;
+  const deadline = depositDeadline(appointment, hours, rules);
+  const freeLeft = freeChangeUntil(appointment, rules.cancelHours).getTime() - Date.now();
 
   return (
     <Page className="gap-4 px-5 pb-6 pt-2">
       <m.section variants={fadeUp} initial="hidden" animate="show" className="text-center">
-        <StatusChip appointment={appointment} />
+        <StatusChip appointment={appointment} viewer="client" />
         <p className="mt-3 text-[15px] capitalize text-secondary">{longDate(appointment.date)}</p>
         <p className="text-6xl font-bold tracking-tight tabular-nums">{appointment.time}</p>
         <p className="mt-1 text-lg font-semibold">{appointment.serviceName}</p>
@@ -79,7 +84,7 @@ export default function ClienteTurnoPage() {
 
       <div className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
         <div className="row">
-          <span className="flex-1 text-[15px]">Seña 50%</span>
+          <span className="flex-1 text-[15px]">Seña {appointmentDepositPercent(appointment)}</span>
           <span className="text-right">
             <span className="block text-[15px] font-semibold tabular-nums">{money(t.deposit)}</span>
             <span className={cn("block text-xs", depositPaid ? "text-mint-ink" : underReview ? "text-amber-ink" : "text-secondary")}>
@@ -87,7 +92,9 @@ export default function ClienteTurnoPage() {
                 ? `Abonada · ${paymentMethodLabel[appointment.deposit.method]}`
                 : underReview
                   ? "Estamos confirmando tu transferencia"
-                  : "Pendiente"}
+                  : deadline
+                    ? `Aboná la seña antes del ${formatDeadline(deadline)}`
+                    : "Pendiente"}
             </span>
           </span>
         </div>
@@ -110,7 +117,7 @@ export default function ClienteTurnoPage() {
 
       {canPayOnline && (
         <button type="button" onClick={() => setPaying(true)} className="tap btn-primary">
-          <CreditCard size={17} /> Pagar seña {money(t.deposit)}
+          <CreditCard size={17} /> {appointment.deposit.method === "efectivo" ? "Pagar seña online" : "Pagar seña"} {money(t.deposit)}
         </button>
       )}
 
@@ -124,8 +131,10 @@ export default function ClienteTurnoPage() {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => (inWindow ? setRescheduling(true) : toast(`Solo podés reprogramar hasta ${FREE_CANCELLATION_HOURS}h antes`, "error"))}
-              className="tap btn-secondary"
+              disabled={!inWindow}
+              aria-describedby="turno-policy"
+              onClick={() => setRescheduling(true)}
+              className="tap btn-secondary disabled:opacity-50"
             >
               <CalendarClock size={17} /> Reprogramar
             </button>
@@ -133,6 +142,15 @@ export default function ClienteTurnoPage() {
               <CircleX size={17} /> Cancelar
             </button>
           </div>
+          {/* La regla siempre a la vista: no aparece recién como error después de tocar. */}
+          <p id="turno-policy" className={cn("-mt-1 flex items-start gap-2 px-1 text-[13px]", inWindow ? "text-secondary" : "text-amber-ink")}>
+            <Clock size={15} className="mt-0.5 shrink-0" aria-hidden />
+            <span>
+              {inWindow
+                ? `Reprogramá o cancelá sin cargo hasta ${rules.cancelHours} h antes · te quedan ${timeLeft(freeLeft)}.`
+                : `Faltan menos de ${rules.cancelHours} h: ya no se puede reprogramar.${depositPaid ? " Si cancelás, la seña no se reintegra." : ""}`}
+            </span>
+          </p>
         </>
       )}
 
@@ -163,7 +181,7 @@ export default function ClienteTurnoPage() {
               className="overflow-hidden"
             >
               <div className="rounded-2xl bg-surface-lowest p-4 shadow-xs">
-                <AppointmentTimeline appointment={appointment} />
+                <AppointmentTimeline appointment={appointment} viewer="client" />
               </div>
             </m.div>
           )}
@@ -179,6 +197,7 @@ export default function ClienteTurnoPage() {
         destructive
         title="¿Cancelar este turno?"
         confirmLabel="Cancelar turno"
+        busyLabel="Cancelando…"
         onConfirm={async () => {
           await cancelAppointment(appointment.id, inWindow && depositPaid ? `Cancelado · ${money(t.deposit)} quedan a tu favor` : "Turno cancelado");
         }}
@@ -187,7 +206,9 @@ export default function ClienteTurnoPage() {
             ? depositPaid
               ? `Tu seña de ${money(t.deposit)} queda como crédito para tu próxima reserva.`
               : "No se genera ningún cargo."
-            : `Faltan menos de ${FREE_CANCELLATION_HOURS} horas: la seña no se reintegra.`
+            : depositPaid
+              ? `Faltan menos de ${rules.cancelHours} horas: la seña no se reintegra.`
+              : "No se genera ningún cargo."
         }
       />
     </Page>

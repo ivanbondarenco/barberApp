@@ -72,6 +72,7 @@ test("equipo: alta, desactivar y baja de un barbero", async ({ page }) => {
 
   const active = page.getByRole("switch", { name: "Lucía Fernández recibe reservas" });
   await active.click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Dejar de recibir" }).click();
   await expect(active).toHaveAttribute("aria-checked", "false");
 
   await page.getByRole("main").getByRole("button", { name: /Lucía Fernández/ }).click();

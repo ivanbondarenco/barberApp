@@ -43,7 +43,16 @@ type Values = z.infer<typeof schema>;
  * Se usa en la página /auth/nueva-barberia y en el modal que abren la landing y el ingreso. El
  * botón de enviar lo pone quien lo muestra (en el pie de su hoja), apuntando a `formId`.
  */
-export function ShopSignupForm({ formId, onSubmittingChange }: { formId: string; onSubmittingChange?: (busy: boolean) => void }) {
+export function ShopSignupForm({
+  formId,
+  onSubmittingChange,
+  onDirtyChange,
+}: {
+  formId: string;
+  onSubmittingChange?: (busy: boolean) => void;
+  /** Avisa si ya escribió algo: quien lo muestra en un modal pregunta antes de cerrarlo. */
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -51,7 +60,7 @@ export function ShopSignupForm({ formId, onSubmittingChange }: { formId: string;
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<Values>({
     resolver: zodResolver(schema),
     // Valida al salir de cada campo (y en cada tecla una vez marcado) para que los avisos
@@ -62,6 +71,7 @@ export function ShopSignupForm({ formId, onSubmittingChange }: { formId: string;
   });
 
   useEffect(() => onSubmittingChange?.(isSubmitting), [isSubmitting, onSubmittingChange]);
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
 
   const password = watch("password");
   const passwordConfirm = watch("passwordConfirm");
@@ -141,7 +151,7 @@ export function ShopSignupForm({ formId, onSubmittingChange }: { formId: string;
         <input id={`${formId}-owner`} className="field py-3" autoComplete="name" maxLength={60} {...filtered("ownerName", sanitizePersonName)} />
       </Field>
       <Field label="Tu email" htmlFor={`${formId}-id`} error={errors.identifier?.message} hint="Es con lo que vas a ingresar">
-        <input id={`${formId}-id`} className="field py-3" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} maxLength={120} {...register("identifier")} />
+        <input id={`${formId}-id`} className="field py-3" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={120} {...register("identifier")} />
       </Field>
       <Field label="Contraseña" htmlFor={`${formId}-password`} error={errors.password?.message}>
         <input id={`${formId}-password`} type="password" autoComplete="new-password" className="field py-3" maxLength={100} {...register("password")} />

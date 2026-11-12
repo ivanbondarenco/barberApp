@@ -27,6 +27,8 @@ export interface SetupTask {
   title: string;
   body: string;
   href: string;
+  /** Mejora la experiencia pero la barbería funciona sin esto: no cuenta como pendiente. */
+  optional?: boolean;
 }
 
 /** Hasta cuántos días atrás se muestra la actividad. */
@@ -129,6 +131,7 @@ export function setupTasks(state: Pick<DomainState, "integrations" | "services">
     tasks.push({
       id: "whatsapp",
       title: "Conectá WhatsApp",
+      optional: true,
       body: "Para mandar los códigos de verificación a tus clientes.",
       href: "/admin/configuracion?tab=integraciones",
     });
@@ -139,5 +142,6 @@ export function setupTasks(state: Pick<DomainState, "integrations" | "services">
 /** Cuántos avisos nuevos hay desde la última vez que se abrió la campana. */
 export function unreadCount(activity: ActivityItem[], tasks: SetupTask[], lastSeen: string | null): number {
   const fresh = activity.filter((i) => !lastSeen || i.at > lastSeen || i.kind === "transferencia" || i.kind === "recordatorios");
-  return fresh.length + tasks.length;
+  // Lo opcional (WhatsApp) se lista en la campana, pero no la pinta de rojo.
+  return fresh.length + tasks.filter((t) => !t.optional).length;
 }

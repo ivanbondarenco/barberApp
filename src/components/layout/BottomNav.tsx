@@ -26,21 +26,22 @@ export function BottomNav({ items }: { items: NavItem[] }) {
       style={{ viewTransitionName: "app-nav" }}
       className="pb-safe z-40 shrink-0 border-t border-surface-high bg-surface-lowest/95 backdrop-blur-xl lg:hidden"
     >
-      <ul className="flex h-16 items-stretch justify-around px-2">
+      {/* Con 5 pestañas en 360px cada una queda en ~70px: el indicador y la etiqueta se achican para entrar. */}
+      <ul className={cn("flex h-16 items-stretch justify-around", items.length > 4 ? "px-1" : "px-2")}>
         {items.map(({ href, label, icon: Icon, badge, match = [] }) => {
           const active = [href, ...match].some((p) => pathname === p || pathname.startsWith(`${p}/`));
           return (
-            <li key={href} className="flex flex-1">
+            <li key={href} className="flex min-w-0 flex-1">
               <Link
                 href={href}
                 transitionTypes={active ? undefined : [...NAV.tab]}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
+                  "relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
                   active ? "text-primary" : "text-secondary",
                 )}
               >
-                <span className="relative flex h-8 w-14 items-center justify-center">
+                <span className={cn("relative flex h-8 items-center justify-center", items.length > 4 ? "w-12" : "w-14")}>
                   {active && (
                     <m.span
                       layoutId="nav-indicator"
@@ -62,7 +63,7 @@ export function BottomNav({ items }: { items: NavItem[] }) {
                     </m.span>
                   )}
                 </span>
-                <span className={cn(active && "font-semibold")}>{label}</span>
+                <span className={cn("max-w-full truncate px-0.5", active && "font-semibold")}>{label}</span>
               </Link>
             </li>
           );

@@ -1,7 +1,7 @@
 "use client";
 
 import * as m from "motion/react-m";
-import { AtSign, CalendarPlus, Clock, MapPin, MessageSquareText, ShieldCheck, Star } from "lucide-react";
+import { AtSign, CalendarPlus, ChevronRight, Clock, MapPin, MessageSquareText, ShieldCheck, Star } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
@@ -11,9 +11,10 @@ import { NAV, Page } from "@/components/motion/Page";
 import { cn } from "@/lib/cn";
 import { money, whatsappLink } from "@/lib/format";
 import { fadeUp, listItem } from "@/lib/motion";
-import { FREE_CANCELLATION_HOURS } from "@/lib/pricing";
+import { depositPercent } from "@/lib/pricing";
 import { formatDayHours } from "@/lib/schedule";
 import { useAppStore, useHydrated } from "@/store/useAppStore";
+import { useBookingRules } from "@/store/useRules";
 
 const DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -32,6 +33,7 @@ export default function LocalPage() {
   const shop = useAppStore((s) => s.shop);
   const info = useAppStore((s) => s.businessInfo);
   const hours = useAppStore((s) => s.businessHours);
+  const rules = useBookingRules();
   const allServices = useAppStore((s) => s.services);
   const allBarbers = useAppStore((s) => s.barbers);
   const depositRate = useAppStore((s) => s.depositSettings.rate);
@@ -52,6 +54,10 @@ export default function LocalPage() {
 
   // Sin cuenta se reserva igual: solo nombre y celular.
   const reservarHref = session ? homeFor(session) : "/reservar";
+  // Tocar un servicio arranca la reserva con ese servicio elegido (el staff no reserva desde acá).
+  const serviceHref = (id: string) =>
+    !session ? `/reservar?servicio=${id}` : session.role === "cliente" ? `/cliente/reservar?servicio=${id}` : null;
+  const place = [info.address, info.neighborhood].filter(Boolean).join(", ");
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-surface shadow-md lg:my-8 lg:min-h-0 lg:max-w-[720px] lg:rounded-3xl">
@@ -60,10 +66,14 @@ export default function LocalPage() {
           <LogoSeal className="h-20 w-20 drop-shadow-md" />
           <h1 className="mt-4 text-2xl font-bold tracking-tight">{info.name}</h1>
           {info.address && (
-            <p className="mt-1 flex items-center gap-1.5 text-[15px] text-secondary">
-              <MapPin size={15} aria-hidden /> {info.address}
-              {info.neighborhood ? `, ${info.neighborhood}` : ""}
-            </p>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 flex min-h-11 items-center gap-1.5 text-[15px] text-secondary underline-offset-2 hover:underline"
+            >
+              <MapPin size={15} aria-hidden /> {place}
+            </a>
           )}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             {info.whatsapp && (
@@ -71,9 +81,9 @@ export default function LocalPage() {
                 href={whatsappLink(info.whatsapp, `Hola ${info.name}, quería consultar por un turno`)}
                 target="_blank"
                 rel="noreferrer"
-                className="chip bg-surface-lowest py-1.5 text-primary shadow-xs"
+                className="chip min-h-11 bg-surface-lowest px-4 text-[13px] text-primary shadow-xs"
               >
-                <MessageSquareText size={13} /> WhatsApp
+                <MessageSquareText size={15} /> WhatsApp
               </a>
             )}
             {info.instagram && (
@@ -81,9 +91,9 @@ export default function LocalPage() {
                 href={`https://instagram.com/${info.instagram.replace("@", "")}`}
                 target="_blank"
                 rel="noreferrer"
-                className="chip bg-surface-lowest py-1.5 text-primary shadow-xs"
+                className="chip min-h-11 bg-surface-lowest px-4 text-[13px] text-primary shadow-xs"
               >
-                <AtSign size={13} /> {info.instagram}
+                <AtSign size={15} /> {info.instagram}
               </a>
             )}
           </div>
@@ -91,31 +101,46 @@ export default function LocalPage() {
 
         {/* Servicios y precios: lo que la gente realmente viene a ver. */}
         <section>
-          <h2 className="text-caps mb-2 text-secondary">Servicios</h2>
+          <h2 className="section-title mb-2">Servicios</h2>
           {services.length === 0 ? (
             <p className="rounded-2xl bg-surface-lowest px-4 py-6 text-center text-sm text-secondary shadow-xs">
               El local todavía no publicó su lista de servicios.
             </p>
           ) : (
             <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
-              {services.map((s, i) => (
-                <m.li key={s.id} custom={i} variants={listItem} initial="hidden" animate="show" className="row">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-medium">{s.name}</span>
-                    <span className="block truncate text-[13px] text-secondary">
-                      {s.durationMin} min{s.description ? ` · ${s.description}` : ""}
+              {services.map((s, i) => {
+                const href = serviceHref(s.id);
+                const content = (
+                  <>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-medium">{s.name}</span>
+                      <span className="block truncate text-[13px] text-secondary">
+                        {s.durationMin} min{s.description ? ` · ${s.description}` : ""}
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-[15px] font-semibold tabular-nums">{money(s.price)}</span>
-                </m.li>
-              ))}
+                    <span className="text-[15px] font-semibold tabular-nums">{money(s.price)}</span>
+                    {href && <ChevronRight size={18} className="-mr-1 shrink-0 text-secondary" aria-hidden />}
+                  </>
+                );
+                return (
+                  <m.li key={s.id} custom={i} variants={listItem} initial="hidden" animate="show">
+                    {href ? (
+                      <Link href={href} transitionTypes={[...NAV.forward]} className="row tap hover:bg-surface-low">
+                        {content}
+                      </Link>
+                    ) : (
+                      <div className="row">{content}</div>
+                    )}
+                  </m.li>
+                );
+              })}
             </ul>
           )}
         </section>
 
         {barbers.length > 0 && (
           <section>
-            <h2 className="text-caps mb-2 text-secondary">Equipo</h2>
+            <h2 className="section-title mb-2">Equipo</h2>
             <ul className="flex flex-wrap gap-2">
               {barbers.map((b) => (
                 <li key={b.id} className="flex items-center gap-2 rounded-2xl bg-surface-lowest px-3 py-2 shadow-xs">
@@ -139,7 +164,7 @@ export default function LocalPage() {
         )}
 
         <section>
-          <h2 className="text-caps mb-2 text-secondary">Horarios</h2>
+          <h2 className="section-title mb-2">Horarios</h2>
           <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
             {ORDER.map((i) => {
               const day = hours[i];
@@ -161,8 +186,8 @@ export default function LocalPage() {
             {depositRate > 0 ? (
               <>
                 Para confirmar el turno se abona una seña del{" "}
-                <strong className="text-ink">{Math.round(depositRate * 100)}%</strong>, que se descuenta del total.
-                Cancelás sin cargo hasta {FREE_CANCELLATION_HOURS} h antes.{" "}
+                <strong className="text-ink">{depositPercent(depositRate)}</strong>, que se descuenta del total.
+                Cancelás o reprogramás sin cargo hasta {rules.cancelHours} h antes.{" "}
               </>
             ) : (
               <>Reservás sin seña. Si no podés venir, avisá con tiempo así el horario queda libre. </>

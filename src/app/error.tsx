@@ -1,8 +1,8 @@
 "use client";
 
 import { RefreshCw, TriangleAlert } from "lucide-react";
-import Link from "next/link";
 import { useEffect } from "react";
+import { HomeLink } from "@/components/landing/RecoveryLinks";
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -22,9 +22,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
         <button type="button" onClick={reset} className="tap btn-primary">
           <RefreshCw size={16} /> Reintentar
         </button>
-        <Link href="/" className="tap btn-secondary">
-          Inicio
-        </Link>
+        <HomeLink className="tap btn-secondary">Inicio</HomeLink>
       </div>
     </div>
   );

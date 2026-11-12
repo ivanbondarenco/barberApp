@@ -1,5 +1,5 @@
 import { Scissors } from "lucide-react";
-import Link from "next/link";
+import { HomeLink } from "@/components/landing/RecoveryLinks";
 
 export const metadata = { title: "Página no encontrada" };
 
@@ -10,13 +10,11 @@ export default function NotFound() {
         <Scissors size={26} />
       </span>
       <div>
-        <p className="label-caps">Error 404</p>
+        <p className="section-title">Error 404</p>
         <h1 className="text-xl font-bold tracking-tight">Esta página no existe</h1>
         <p className="mt-1 text-sm text-secondary">El enlace puede estar vencido o el turno fue eliminado.</p>
       </div>
-      <Link href="/" className="tap btn-primary max-w-60">
-        Volver al inicio
-      </Link>
+      <HomeLink className="tap btn-primary max-w-60">Volver al inicio</HomeLink>
     </div>
   );
 }

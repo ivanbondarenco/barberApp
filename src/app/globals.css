@@ -19,6 +19,8 @@
   --color-secondary: #545f73;
   --color-muted: #62636c;
   --color-outline: #c6c6ce;
+  /* Bordes y controles apagados que tienen que verse (≥3:1 sobre blanco): switch off, estrellas vacías. */
+  --color-outline-strong: #858b9c;
 
   --color-surface: #f8f9ff;
   --color-surface-lowest: #ffffff;

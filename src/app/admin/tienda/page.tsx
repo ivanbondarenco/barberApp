@@ -77,7 +77,12 @@ export default function AdminTiendaPage() {
                   <span className="block truncate text-[15px] font-medium">{p.name}</span>
                   <span className="text-[13px] font-semibold text-error">{p.stock === 0 ? "Sin stock" : `Quedan ${p.stock}`}</span>
                 </span>
-                <button type="button" onClick={() => void adjustStock(p.id, 5)} className="tap chip bg-primary-fixed py-1.5 text-primary">
+                <button
+                  type="button"
+                  onClick={() => void adjustStock(p.id, 5)}
+                  aria-label={`Sumar 5 al stock de ${p.name}`}
+                  className="tap flex min-h-11 min-w-11 items-center justify-center rounded-full bg-primary-fixed px-3 text-[13px] font-semibold text-primary"
+                >
                   +5
                 </button>
               </li>

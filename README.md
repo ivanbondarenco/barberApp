@@ -42,6 +42,13 @@ La base se crea sola la primera vez y arranca **vacía**: la primera pantalla es
 | `MAIL_FROM` | Remitente, por ejemplo `BarberApp <turnos@tudominio.com>` |
 | `APP_URL` | Dirección pública de la app. Con esto se arman los links de los mails |
 | `BACKUP_DIR`, `BACKUP_KEEP` | Destino y cantidad de copias de `npm run backup` |
+| `TZ` | Zona horaria del servidor. **Tiene que ser `America/Argentina/Buenos_Aires`**: los turnos se guardan en hora local y los plazos se calculan con ella. El `Dockerfile` ya la fija |
+| `EVOLUTION_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE`, `EVOLUTION_WEBHOOK_TOKEN` | WhatsApp de BarberApp para los avisos automáticos, con Evolution API. Ver [`deploy/WHATSAPP.md`](deploy/WHATSAPP.md) |
+| `WA_APP_SECRET`, `WA_VERIFY_TOKEN`, `WA_TEMPLATE_BOOKING`, `WA_TEMPLATE_REMINDER`, `WA_TEMPLATE_LAST_CALL` | Alternativa oficial (Cloud API de Meta) para los avisos, junto con `WA_ACCESS_TOKEN` y `WA_PHONE_NUMBER_ID` |
+| `DISABLE_WORKERS` | `1` apaga los avisos automáticos y los de la suscripción en esta instancia |
+| `MP_PLATFORM_ACCESS_TOKEN` | Access token de producción de la cuenta de Mercado Pago **de BarberApp** (no de una barbería). Con él se cobran las suscripciones de los locales. Sin él, la suscripción se paga solo por transferencia (ver **Suscripción de BarberApp**) |
+| `PLAN_MIN_PRICE` | Piso del precio mensual de la suscripción, en pesos (por defecto `10000`) |
+| `SUPERADMIN_IDENTIFIERS` | Emails o celulares (separados por coma) de las cuentas que ven `/superadmin`: todas las barberías, con pagos a mano y prórrogas |
 
 Ver `.env.example`. Las credenciales que cargue cada barbería desde la app tienen prioridad sobre las variables de entorno, que quedan como atajo para un deploy de un solo local.
 
@@ -83,7 +90,7 @@ Pantalla ──run(command)──▶ Zustand (aplica el cambio al instante)
   - **Dueño**: todo.
   - **Sistema**: el webhook de la pasarela. Lo único que puede hacer es acreditar una seña.
 - **Sesiones**: cookie `httpOnly` con token aleatorio (se guarda solo su hash) y contraseña con hash `scrypt`.
-- **API**: `GET /api/state`, `POST /api/commands`, `POST /api/auth/{login,register,recover,password,logout}`, `GET|POST /api/auth/verificar`, `POST /api/memberships`, `GET|POST /api/shops`, `POST /api/payments/{checkout,webhook}`, `GET /api/payments/oauth/{start,callback}`, `GET|DELETE /api/settings/payments`, `POST /api/staff/account`.
+- **API**: `GET /api/state`, `POST /api/commands`, `GET /api/billing`, `GET /api/billing/status`, `POST /api/billing/{subscribe,cancel}`, `GET /api/superadmin/shops`, `POST /api/superadmin/shops/<id>`, `POST /api/auth/{login,register,recover,password,logout}`, `GET|POST /api/auth/verificar`, `POST /api/memberships`, `GET|POST /api/shops`, `POST /api/payments/{checkout,webhook}`, `GET /api/payments/oauth/{start,callback}`, `GET|DELETE /api/settings/payments`, `POST /api/staff/account`.
 
 ## Multi-barbería
 
@@ -161,11 +168,28 @@ La regla de fondo es una sola: **el navegador nunca decide si entró la plata.**
 - **Webhook**: valida la firma HMAC (`x-signature` + `x-request-id`) con `MP_WEBHOOK_SECRET`, busca la orden en `mp_orders`, la consulta con el token del local y acredita solo si está `processed`/`accredited` por el total. Cada orden se aplica una sola vez. Eventos: **Order (Mercado Pago)** y **Vinculación de aplicaciones**, apuntando a `/api/payments/webhook`.
 - **Sin Mercado Pago conectado** la app ofrece solo transferencia y efectivo.
 
+## Suscripción de BarberApp
+
+Cada barbería le paga a BarberApp una suscripción mensual. Las reglas son funciones puras en `src/lib/billing.ts` y el cobro vive en `src/server/billing.ts`.
+
+- **Prueba gratis de 1 mes**, sin tarjeta, desde el alta del local. Las barberías que ya existían al llegar esto recibieron 30 días desde el deploy: nadie se quedó sin agenda.
+- **Precio: el valor de 2 cortes de la barbería.** 2 × el corte activo más barato (si no hay cortes, el servicio activo más barato), con un piso de `PLAN_MIN_PRICE` (10.000 por defecto). Lo calcula `planPrice`, el único lugar donde se decide.
+- **Estado**, calculado siempre de las fechas (no se guarda): `trial` → `active` (pagada) → `past_due` (vencida, 7 días de gracia en los que se sigue operando) → `suspended`.
+- **Suspendida no borra nada.** El staff entra y ve su agenda, pero el servidor rechaza todos sus comandos; los clientes e invitados no pueden reservar ni reprogramar ("Este local no está tomando reservas online por ahora. Escribile por WhatsApp."), aunque sí cancelar o avisar una transferencia de turnos que ya tenían. El webhook de pagos (`sistema`) sigue acreditando señas ya cobradas. Pagar devuelve todo al instante. El control está en `executeCommand` (`src/server/billing-access.ts`), por donde pasan todos los comandos.
+- **Exentas**: la barbería de demostración y la app corriendo con `E2E_TEST_MODE`.
+- **Cobro con Mercado Pago**: suscripción automática (API `preapproval`) a nombre de la cuenta de la **plataforma** (`MP_PLATFORM_ACCESS_TOKEN`), no de la barbería. El dueño toca **Suscribirme con Mercado Pago** en `/admin/suscripcion`, autoriza una vez y se le debita solo cada mes. Si todavía le quedan días de prueba, el primer débito se programa para cuando terminen. Cada débito aprobado llega por el webhook y suma un mes desde lo más tarde entre hoy, lo pagado y el fin de la prueba; cada cobro cuenta una sola vez (`billing_payments`, id `mp:<pago>`).
+- **Webhook**: es el mismo `/api/payments/webhook`, con la misma firma. En la aplicación de Mercado Pago hay que habilitar también los eventos de **Planes y suscripciones** (`subscription_preapproval` y `subscription_authorized_payment`). Para que la firma coincida, usá el access token de producción de la misma aplicación (BarberPagos) como `MP_PLATFORM_ACCESS_TOKEN`.
+- **Transferencia o efectivo**: el dueño escribe al WhatsApp de soporte y un superadmin registra el pago desde `/superadmin` (también prorroga pruebas). Superadmin es cualquier cuenta logueada cuyo email o celular esté en `SUPERADMIN_IDENTIFIERS`.
+- **Avisos**: el dueño ve un aviso arriba del panel con 7 días o menos de prueba, con la cuota vencida o suspendida; el barbero, solo si está suspendida. Por mail (si hay SMTP), `runBillingSweep(now)` manda 7 días y 1 día antes del fin de la prueba, al vencer y al suspenderse, cada uno una sola vez por vencimiento (`billing_notices`). La función no arranca ningún temporizador: la llama el worker periódico.
+
 ## Ausencias y recordatorios
 
 - **No vino**: se marca desde el turno una vez pasada la hora. La seña abonada queda para el local y **no** vuelve como crédito. Para perdonar la ausencia se cancela el turno, que sí lo devuelve.
 - **Ausencias reiteradas**: con 2 ausencias, ese cliente deja de poder reservar con seña en efectivo y tiene que abonarla por adelantado. Es la política que figura en `/politicas`, aplicada por el servidor — no un texto suelto.
-- **Recordatorios**: `/admin/recordatorios` arma la cola de las próximas 24 h (turnos confirmados, con seña resuelta y cliente que los pidió). Hoy se mandan con un toque por WhatsApp y se marcan enviados; la cola es una función pura sobre la agenda (`src/lib/reminders.ts`), lista para que un worker la consuma cuando esté la WhatsApp Cloud API.
+- **Avisos automáticos por WhatsApp**: confirmación al reservar, recordatorio con **1 = confirmo / 2 = cancelo** y último aviso, desde **un solo número de BarberApp** para todos los locales. Cada local los prende en **Configuración → Avisos** y elige cuántas horas antes. El canal es Evolution API (`EVOLUTION_*`) o, si no está, la Cloud API de Meta (`WA_*`): ver [`deploy/WHATSAPP.md`](deploy/WHATSAPP.md).
+  - Qué aviso toca es una función pura (`dueNotices` en `src/lib/wa-messages.ts`); el envío y las respuestas viven en `src/server/wa-notify.ts`, y el barrido cada minuto en `src/server/workers.ts`, que arranca desde `instrumentation.ts` (`DISABLE_WORKERS=1` lo apaga).
+  - Responder **2** cancela con las mismas reglas que la app (actúa como ese cliente). **BAJA** lo saca de todos los avisos (`wa_optout`).
+  - Sin canal configurado, `/admin/recordatorios` sigue armando la cola para mandarlos con un toque.
 
 ## Reseñas
 
@@ -198,12 +222,14 @@ El rating de cada barbero **no se carga a mano**: sale de las reseñas reales de
 
 ## Reglas de negocio
 
-- La seña la elige cada barbería (0, 30, 50 o 100% del servicio) en **Catálogo → Seña**. Con 0% no se pide seña y el turno queda confirmado al reservar.
-- El cliente reserva por su cuenta hasta **2 semanas** adelante; el staff agenda sin tope. La regla la valida el servidor, no solo la pantalla.
-- Cancelar o reprogramar sin cargo se permite hasta 3 h antes. Si la seña estaba abonada, queda como crédito a favor, que se puede usar como seña en la próxima reserva.
+- La seña la elige cada barbería (0, 30, 50 o 100% del servicio) en **Configuración → Señas**, y **cada servicio puede tener la suya** (por ejemplo, seña solo en el color). Con 0% no se pide seña y el turno queda confirmado al reservar.
+- **Reglas de reserva por local** (**Configuración → Reservas**, `bookingRules`): cada cuántos minutos arrancan los turnos (10 a 60), tiempo libre entre turnos, hasta cuántos días adelante reserva el cliente (2 semanas por defecto), anticipación mínima, plazo para cancelar sin cargo (3 h por defecto) y plazo de la seña en efectivo (4 h). Las valida el servidor (`validateBookingRules`), no solo la pantalla. El staff agenda sin tope de días.
+- **Horario por barbero**: cada barbero puede tener su horario semanal (`Barber.schedule`); sin él, atiende en el del local. Los **bloqueos** pueden ser de un rato, **repetirse** ciertos días de la semana (el almuerzo) o **durar varios días** (vacaciones).
+- **"Me da igual el barbero"**: con más de un barbero, la reserva arranca mostrando los horarios de todos (`anyBarberSlots`) y el servidor asigna, al confirmar, al que tenga libre el horario y menos trabajo ese día (`ANY_BARBER`).
+- Cancelar o reprogramar sin cargo se permite hasta el plazo del local. Si la seña estaba abonada, queda como crédito a favor, que se puede usar como seña en la próxima reserva.
 - Una seña `en_revision` todavía no entró: al cancelar no genera crédito.
 - Si el cliente no se presenta, la seña abonada queda para el local.
-- La seña en efectivo vence 4 h antes del turno, ajustada al horario del local.
+- La seña en efectivo vence unas horas antes del turno (4 por defecto), ajustada al horario del local.
 - Los productos agregados a un turno descuentan stock y se suman al saldo del sillón.
 
 ## Operación
@@ -255,13 +281,13 @@ Lo que hay que resolver una vez, antes de que un local cobre de verdad:
    - `ALERT_WEBHOOK_URL`, para enterarte de los errores.
    - `DATABASE_PATH=/data/ds-studio.db` (ya viene así en el `Dockerfile`).
 3. **Backups fuera del servidor.** `npm run backup` copia al mismo disco: si se pierde el servidor, se pierden con él. Programalo por cron y sincronizá `BACKUP_DIR` con un almacenamiento externo (S3, Backblaze, Google Drive).
-4. **Mercado Pago**: crear la aplicación de la instalación y cargar `MP_CLIENT_ID`, `MP_CLIENT_SECRET` y `MP_WEBHOOK_SECRET` (ver `deploy/VPS.md`, paso 7). Después, **cada barbería** conecta su cuenta desde **Configuración → Conexiones** y, si recupera contraseñas por WhatsApp, carga las credenciales de WhatsApp Cloud API.
+4. **Mercado Pago**: crear la aplicación de la instalación y cargar `MP_CLIENT_ID`, `MP_CLIENT_SECRET` y `MP_WEBHOOK_SECRET` (ver `deploy/VPS.md`, paso 7). Para cobrar las suscripciones, `MP_PLATFORM_ACCESS_TOKEN` y los eventos de **Planes y suscripciones** en el webhook; `SUPERADMIN_IDENTIFIERS` con tu cuenta para ver `/superadmin`. Después, **cada barbería** conecta su cuenta desde **Configuración → Conexiones** y, si recupera contraseñas por WhatsApp, carga las credenciales de WhatsApp Cloud API.
 5. **Probar el arranque**: si la app no levanta, el log dice exactamente qué variable falta. `GET /api/health` tiene que responder `ok`.
 
 ## Pendiente para producción
 
 1. **Migrar el storage cuando toque.** Ver *El techo de storage* más arriba: mirar `storage.lastWriteMs` en `/api/health` y migrar a Postgres antes de que empiece a subir.
 2. **Monitoreo más fino.** Los errores ya avisan por `ALERT_WEBHOOK_URL`. Si más adelante se quiere agrupar errores, ver tendencias o trazas, Sentry se engancha en `src/instrumentation.ts` (`onRequestError`) y en `reportError` de `src/server/monitor.ts`.
-3. **Recordatorios automáticos.** Hoy se mandan con un toque desde `/admin/recordatorios`. Para que salgan solos hacen falta un proceso que despierte (cron) y una plantilla de WhatsApp aprobada para recordatorios — la de autenticación no sirve para eso.
+3. **Varias instancias.** Los avisos y la suscripción corren en un proceso por instancia (`src/server/workers.ts`). Con más de una instancia (después de migrar a Postgres) hace falta un candado (`pg_try_advisory_lock`) o dejar los workers en una sola (`DISABLE_WORKERS=1` en las demás).
 4. **Promociones.** El switch de "novedades" se quitó porque no había nada detrás. Si se quiere marketing a clientes, es una función nueva: segmentación, plantilla aprobada y control de frecuencia.
 5. **Dominio por barbería.** Hoy cada local se comparte con `/b/<slug>`. Si en algún momento quieren `sunombre.tuapp.com`, alcanza con resolver la barbería desde el subdominio en lugar de la cookie: el resto del modelo no cambia.

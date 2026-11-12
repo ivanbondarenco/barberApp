@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckoutSheet, type DigitalMethod } from "@/components/booking/CheckoutSheet";
+import { appointmentDepositPercent } from "@/lib/pricing";
 import type { Appointment } from "@/lib/types";
 import { declareTransfer, startCheckout } from "@/store/actions";
 import { toast } from "@/store/useToast";
@@ -47,6 +48,7 @@ export function PayDepositSheet({
       amount={amount}
       description={`${appointment.serviceName} · ${appointment.time} hs`}
       mode="pay"
+      percent={appointmentDepositPercent(appointment)}
       onConfirm={confirm}
     />
   );

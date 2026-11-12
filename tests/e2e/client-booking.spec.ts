@@ -21,7 +21,8 @@ test("reserva avisando una transferencia: queda en revisión hasta que el local 
   await expect(page.getByText("$4.750")).toBeVisible(); // seña 50% de $9.500
   const time = await continueToConfirm(page);
 
-  await expect(page.getByRole("radio", { name: /Pagar online/ })).toHaveAttribute("aria-checked", "true");
+  // Sin Mercado Pago conectado, el medio online que queda elegido es la transferencia.
+  await expect(page.getByRole("radio", { name: /Transferencia/ })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("button", { name: "Pagar seña" }).click();
   const checkout = page.getByRole("dialog", { name: "Pagar seña" });
   await expect(checkout.getByText("$4.750", { exact: true })).toBeVisible();
@@ -103,10 +104,10 @@ test("el asistente permite volver y cambiar de barbero", async ({ page }) => {
 });
 
 test("reprograma un turno propio", async ({ page }) => {
-  await page.goto("/cliente/mis-turnos");
-  await page.getByRole("link", { name: /Tu próximo turno/ }).click();
-  await page.waitForURL(/cliente\/turno\//);
-  const id = page.url().split("/").pop()!;
+  // El turno sembrado es a días vista: uno reservado hoy por otro test puede caer a menos de
+  // 3 h, y ahí (con razón) ya no se puede reprogramar.
+  const id = "a-demo-client";
+  await page.goto(`/cliente/turno/${id}`);
   const original = (await pageState(page)).state.appointments.find((a) => a.id === id)!;
 
   await page.getByRole("button", { name: "Reprogramar" }).click();
@@ -214,7 +215,7 @@ test("la agenda del cliente llega hasta dos semanas: más lejos lo rechaza el se
 test("historial filtra turnos y permite repetir", async ({ page }) => {
   await page.goto("/cliente/historial");
   await page.getByRole("tab", { name: "Realizados" }).click();
-  await expect(page.getByText("Cobrado").first()).toBeVisible();
+  await expect(page.getByText("Realizado", { exact: true }).first()).toBeVisible();
   await page.getByRole("link", { name: /Repetir/ }).first().click();
   await expect(page.getByRole("heading", { name: "¿Cuándo venís?" })).toBeVisible();
 });

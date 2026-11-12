@@ -30,7 +30,7 @@ export function Switch({ checked, onChange, label, locked, className }: SwitchPr
       <span
         className={cn(
           "flex h-7 w-12 items-center rounded-full p-0.5 transition-colors duration-200 group-focus-visible:ring-2 group-focus-visible:ring-primary group-focus-visible:ring-offset-2",
-          checked ? "justify-end bg-primary" : "justify-start bg-[#b9bcc8]",
+          checked ? "justify-end bg-primary" : "justify-start bg-outline-strong",
         )}
       >
         <m.span

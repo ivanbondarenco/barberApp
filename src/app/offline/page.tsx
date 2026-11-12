@@ -1,5 +1,5 @@
 import { WifiOff } from "lucide-react";
-import Link from "next/link";
+import { ReloadButton } from "@/components/landing/RecoveryLinks";
 
 export const metadata = { title: "Sin conexión" };
 
@@ -15,9 +15,7 @@ export default function OfflinePage() {
           Tus turnos guardados siguen disponibles. Reconectate para reservar o cobrar.
         </p>
       </div>
-      <Link href="/" className="tap btn-primary max-w-60">
-        Reintentar
-      </Link>
+      <ReloadButton className="tap btn-primary max-w-60">Reintentar</ReloadButton>
     </div>
   );
 }

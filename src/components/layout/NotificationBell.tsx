@@ -139,7 +139,7 @@ export function NotificationBell() {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">
                           <span className="truncate text-sm font-semibold">{item.title}</span>
-                          <span className="shrink-0 text-[11px] text-secondary">{ago(item.at, now)}</span>
+                          <span className="shrink-0 text-xs text-secondary">{ago(item.at, now)}</span>
                         </span>
                         <span className="block truncate text-xs text-secondary">{item.body}</span>
                       </span>

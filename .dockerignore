@@ -16,3 +16,6 @@ coverage
 backups
 backups.tmp
 video
+
+# Material de redes: no entra a la imagen de la app.
+social-media

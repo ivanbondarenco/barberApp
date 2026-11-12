@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
-import { HOLD_MINUTES } from "@/lib/pricing";
+import { depositPercent, HOLD_MINUTES } from "@/lib/pricing";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
 
@@ -24,21 +24,31 @@ interface CheckoutSheetProps {
   onConfirm: (method: DigitalMethod) => Promise<void> | void;
   /** "book": el turno se está creando. "pay": ya existe y se está saldando la seña. */
   mode?: "book" | "pay";
+  /** Medios a ofrecer. Si ya se eligió antes (al reservar), viene uno solo y no se vuelve a preguntar. */
+  methods?: DigitalMethod[];
+  /** "30%": el de la seña ya fijada en el turno. Si falta, la tasa actual del local. */
+  percent?: string;
 }
 
-/** Elección del medio para la seña del 50%. */
-export function CheckoutSheet({ open, onClose, amount, description, onConfirm, mode = "book" }: CheckoutSheetProps) {
+/** Medio online para la seña: Mercado Pago o los datos para transferir. */
+export function CheckoutSheet({ open, onClose, amount, description, onConfirm, mode = "book", methods, percent }: CheckoutSheetProps) {
   const info = useAppStore((s) => s.businessInfo);
+  const rate = useAppStore((s) => s.depositSettings.rate);
   const mercadopagoReady = useAppStore((s) => s.integrations.mercadopagoReady);
-  const [method, setMethod] = useState<DigitalMethod>(mercadopagoReady ? "mercadopago" : "transferencia");
+  const options = [
+    { value: "mercadopago" as const, label: "Mercado Pago", icon: CreditCard, enabled: mercadopagoReady },
+    { value: "transferencia" as const, label: "Transferencia", icon: Landmark, enabled: true },
+  ].filter((o) => o.enabled && (!methods || methods.includes(o.value)));
+  const firstMethod: DigitalMethod = options[0]?.value ?? "transferencia";
+  const [method, setMethod] = useState<DigitalMethod>(firstMethod);
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
     if (open) {
       setWorking(false);
-      setMethod(mercadopagoReady ? "mercadopago" : "transferencia");
+      setMethod(firstMethod);
     }
-  }, [open, mercadopagoReady]);
+  }, [open, firstMethod]);
 
   const confirm = async () => {
     setWorking(true);
@@ -58,10 +68,7 @@ export function CheckoutSheet({ open, onClose, amount, description, onConfirm, m
     }
   };
 
-  const options = [
-    { value: "mercadopago" as const, label: "Mercado Pago", icon: CreditCard, enabled: mercadopagoReady },
-    { value: "transferencia" as const, label: "Transferencia", icon: Landmark, enabled: true },
-  ].filter((o) => o.enabled);
+
 
   return (
     <Sheet
@@ -83,7 +90,7 @@ export function CheckoutSheet({ open, onClose, amount, description, onConfirm, m
     >
       <div className="flex flex-col gap-4">
         <div className="rounded-2xl bg-surface-low py-4 text-center">
-          <p className="text-[13px] text-secondary">Seña 50%</p>
+          <p className="text-[13px] text-secondary">Seña {percent ?? depositPercent(rate)}</p>
           <p className="text-4xl font-bold tracking-tight tabular-nums text-primary">{money(amount)}</p>
         </div>
 

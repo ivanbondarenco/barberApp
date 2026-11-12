@@ -12,9 +12,9 @@ import { downloadAppointmentIcs } from "@/lib/calendar";
 import { dayNumber, dayShort, longDate, toISODate } from "@/lib/dates";
 import { money, paymentMethodLabel } from "@/lib/format";
 import { fadeUp } from "@/lib/motion";
-import { CASH_DEPOSIT_DEADLINE_HOURS, splitDeposit } from "@/lib/pricing";
 import { cashDepositDeadline } from "@/lib/schedule";
 import { useAppStore } from "@/store/useAppStore";
+import { useBookingRules } from "@/store/useRules";
 
 export default function PagoResultadoPage() {
   return (
@@ -31,7 +31,7 @@ function PagoResultado() {
   const barber = useAppStore((s) => s.barbers.find((b) => b.id === appointment?.barberId));
   const info = useAppStore((s) => s.businessInfo);
   const hours = useAppStore((s) => s.businessHours);
-  const depositRate = useAppStore((s) => s.depositSettings.rate);
+  const rules = useBookingRules();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const state = estado === "exito" || estado === "pendiente" ? estado : "error";
@@ -47,8 +47,11 @@ function PagoResultado() {
     );
   }
 
-  const split = appointment ? splitDeposit(appointment.servicePrice, depositRate) : null;
-  const deadline = appointment ? cashDepositDeadline(appointment.date, appointment.time, hours, CASH_DEPOSIT_DEADLINE_HOURS) : null;
+  // La seña quedó fijada al reservar: no se recalcula con la tasa de hoy del local.
+  const split = appointment
+    ? { total: appointment.servicePrice, deposit: appointment.deposit.amount, balance: appointment.servicePrice - appointment.deposit.amount }
+    : null;
+  const deadline = appointment ? cashDepositDeadline(appointment.date, appointment.time, hours, rules.cashDeadlineHours) : null;
 
   // El texto de "pendiente" depende de por qué está pendiente: efectivo, transferencia avisada
   // o pago online sin acreditar todavía.

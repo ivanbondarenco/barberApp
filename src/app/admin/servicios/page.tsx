@@ -2,26 +2,26 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { Package, Scissors, Star } from "lucide-react";
+import { ChevronRight, Package, Percent, Scissors, Star } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
 import { ProductFormSheet } from "@/components/admin/ProductFormSheet";
 import { ServiceFormSheet } from "@/components/admin/ServiceFormSheet";
 import { ProductVisual } from "@/components/marketplace/ProductVisual";
-import { Page } from "@/components/motion/Page";
+import { NAV, Page } from "@/components/motion/Page";
 import { Fab } from "@/components/ui/Fab";
 import { Segmented } from "@/components/ui/Segmented";
-import { EmptyState, Section } from "@/components/ui/States";
+import { EmptyState } from "@/components/ui/States";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
 import { ease, listItem } from "@/lib/motion";
-import { appointmentTotals, splitDeposit } from "@/lib/pricing";
+import { appointmentTotals, depositPercent, serviceDepositRate, splitDeposit } from "@/lib/pricing";
 import type { Product, Service } from "@/lib/types";
 import { saveProduct, saveService } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 
-type Tab = "servicios" | "productos" | "sena";
+type Tab = "servicios" | "productos";
 
 export default function CatalogoPage() {
   const services = useAppStore((s) => s.services);
@@ -54,7 +54,6 @@ export default function CatalogoPage() {
         options={[
           { value: "servicios", label: "Servicios", count: services.length },
           { value: "productos", label: "Productos", count: products.length },
-          { value: "sena", label: "Seña" },
         ]}
       />
 
@@ -96,7 +95,7 @@ export default function CatalogoPage() {
                               {s.featured && <Star size={13} className="shrink-0 fill-primary text-primary" aria-label="Destacado" />}
                             </span>
                             <span className="block text-[13px] text-secondary tabular-nums">
-                              {money(s.price)} · {s.durationMin} min{depositRate > 0 ? ` · seña ${money(splitDeposit(s.price, depositRate).deposit)}` : ""}
+                              {money(s.price)} · {s.durationMin} min{serviceDepositRate(s, depositRate) > 0 ? ` · seña ${money(splitDeposit(s.price, serviceDepositRate(s, depositRate)).deposit)}` : ""}
                             </span>
                           </span>
                         </button>
@@ -108,6 +107,17 @@ export default function CatalogoPage() {
                   </AnimatePresence>
                 </ul>
               )}
+              {/* La seña se configura en un solo lugar: Configuración › Señas. */}
+              <Link href="/admin/configuracion?tab=senas" transitionTypes={[...NAV.forward]} className="tap row card">
+                <Percent size={18} className="shrink-0 text-primary" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold">Configurar seña</span>
+                  <span className="block text-[13px] text-secondary">
+                    {depositRate > 0 ? `Pedís el ${depositPercent(depositRate)} del precio al reservar` : "Hoy los turnos se reservan sin seña"}
+                  </span>
+                </span>
+                <ChevronRight size={17} className="text-secondary" aria-hidden />
+              </Link>
             </>
           )}
 
@@ -144,35 +154,13 @@ export default function CatalogoPage() {
             </>
           )}
 
-          {tab === "sena" && (
-            <>
-              <DepositRulesPanel />
-              <Section title="Seña por servicio">
-                {services.length === 0 && (
-                  <p className="rounded-2xl bg-surface-lowest px-4 py-5 text-center text-sm text-secondary shadow-xs">
-                    Cargá tus servicios y acá vas a ver cuánta seña pide cada uno.
-                  </p>
-                )}
-                <ul className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
-                  {services.map((s) => (
-                    <li key={s.id} className="row">
-                      <span className="min-w-0 flex-1 truncate text-[15px]">{s.name}</span>
-                      <span className="text-[15px] font-semibold tabular-nums text-primary">{money(splitDeposit(s.price, depositRate).deposit)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            </>
-          )}
         </m.div>
       </AnimatePresence>
 
-      {tab !== "sena" && (
-        <Fab
-          label={tab === "servicios" ? "Servicio" : "Producto"}
-          onClick={() => (tab === "servicios" ? setServiceSheet({ open: true }) : setProductSheet({ open: true }))}
-        />
-      )}
+      <Fab
+        label={tab === "servicios" ? "Servicio" : "Producto"}
+        onClick={() => (tab === "servicios" ? setServiceSheet({ open: true }) : setProductSheet({ open: true }))}
+      />
 
       <ServiceFormSheet open={serviceSheet.open} service={serviceSheet.service} onClose={() => setServiceSheet({ open: false })} />
       <ProductFormSheet open={productSheet.open} product={productSheet.product} onClose={() => setProductSheet({ open: false })} />

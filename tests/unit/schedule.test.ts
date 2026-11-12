@@ -104,6 +104,17 @@ describe("buildSlots", () => {
     expect(slots[0]).toBe("11:00");
   });
 
+  it("con walkIn (staff) no pide anticipación y ofrece el horario en curso", () => {
+    const now = new Date(2026, 8, 14, 10, 10);
+    const slots = query({ date: "2026-09-14", now, walkIn: true });
+    expect(free(slots)[0]).toBe("10:00");
+    expect(slots.find((s) => s.time === "10:00")?.current).toBe(true);
+    expect(slots.find((s) => s.time === "10:30")?.current).toBeUndefined();
+    expect(free(slots)).not.toContain("09:30");
+    // Otro día no hay horario en curso.
+    expect(query({ walkIn: true, now }).some((s) => s.current)).toBe(false);
+  });
+
   it("nextFreeTime y ocupación", () => {
     const appointments = [appt({ time: "09:00", durationMin: 60 })];
     expect(nextFreeTime({ date: "2026-09-16", barberId: "b1", appointments, blocks: [], now: MONDAY_9AM })).toBe("10:00");

@@ -5,41 +5,62 @@ import { useState } from "react";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { cn } from "@/lib/cn";
 import { whatsappLink } from "@/lib/format";
+import { depositPercent } from "@/lib/pricing";
 import { formatDayHours } from "@/lib/schedule";
 import { useAppStore } from "@/store/useAppStore";
+import { useBookingRules } from "@/store/useRules";
 
-const FAQ = [
-  {
-    q: "¿Por qué tengo que pagar una seña?",
-    a: "Cada turno bloquea un sillón exclusivo para vos. La seña del 50% confirma la reserva y se descuenta del total.",
-  },
-  {
+/** Preguntas frecuentes con las reglas reales del local: seña, efectivo y medios habilitados. */
+function buildFaq(opts: { rate: number; allowCash: boolean; mercadopagoReady: boolean; cancelHours: number; cashHours: number }) {
+  const online = opts.mercadopagoReady ? "con Mercado Pago o por transferencia" : "por transferencia";
+  const faq: { q: string; a: string }[] = [];
+  if (opts.rate > 0) {
+    faq.push({
+      q: "¿Por qué tengo que pagar una seña?",
+      a: `Cada turno bloquea un sillón exclusivo para vos. La seña del ${depositPercent(opts.rate)} confirma la reserva y se descuenta del total.`,
+    });
+  }
+  faq.push({
     q: "¿Cómo reprogramo o cancelo?",
-    a: "Desde Mis Turnos → Reprogramar o Cancelar, hasta 3 horas antes. La seña queda como crédito a favor.",
-  },
-  {
-    q: "¿Puedo pagar la seña en efectivo?",
-    a: "Sí, en recepción hasta 4 horas antes del turno. Para turnos más cercanos, la seña se abona online.",
-  },
-  {
+    a:
+      `Desde Mis Turnos → Reprogramar o Cancelar, hasta ${opts.cancelHours} horas antes.` +
+      (opts.rate > 0 ? " La seña queda como crédito a favor." : "") +
+      " Si reservaste sin cuenta, escribinos por WhatsApp.",
+  });
+  if (opts.rate > 0) {
+    faq.push({
+      q: "¿Puedo pagar la seña en efectivo?",
+      a: opts.allowCash
+        ? `Sí, en el local hasta ${opts.cashHours} horas antes del turno. Para turnos más cercanos, la seña se abona ${online}.`
+        : `No: este local pide la seña online, ${online}.`,
+    });
+  }
+  faq.push({
     q: "¿Cómo retiro productos de la tienda?",
     a: "Sumalos a tu turno desde la Tienda. Te los entregamos en el sillón y se agregan al saldo a pagar.",
-  },
-  {
-    q: "Pagué con Mercado Pago y no veo la seña",
-    a: "La acreditación puede demorar unos minutos. Si pasaron más de 30, escribinos por WhatsApp con el comprobante.",
-  },
-  {
+  });
+  if (opts.rate > 0 && opts.mercadopagoReady) {
+    faq.push({
+      q: "Pagué con Mercado Pago y no veo la seña",
+      a: "La acreditación puede demorar unos minutos. Si pasaron más de 30, escribinos por WhatsApp con el comprobante.",
+    });
+  }
+  faq.push({
     q: "¿Puedo elegir barbero?",
-    a: "Sí. En Nueva Reserva tocá “Cambiar” sobre la ficha del barbero para ver el equipo disponible.",
-  },
-];
+    a: "Sí. Al reservar, tocá “Cambiar” sobre la ficha del barbero para ver el equipo disponible.",
+  });
+  return faq;
+}
 
 const DAY_NAMES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 export default function AyudaPage() {
   const info = useAppStore((s) => s.businessInfo);
   const hours = useAppStore((s) => s.businessHours);
+  const { rate, allowCash } = useAppStore((s) => s.depositSettings);
+  const mercadopagoReady = useAppStore((s) => s.integrations.mercadopagoReady);
+  const rules = useBookingRules();
+  const faq = buildFaq({ rate, allowCash, mercadopagoReady, cancelHours: rules.cancelHours, cashHours: rules.cashDeadlineHours });
   const [open, setOpen] = useState<number | null>(0);
 
   const weekday = hours[1];
@@ -57,14 +78,14 @@ export default function AyudaPage() {
           >
             <MessageSquareText size={18} /> Escribinos por WhatsApp
           </a>
-          <p className="flex items-start gap-1.5 text-[11px] text-secondary">
+          <p className="flex items-start gap-1.5 text-[13px] text-secondary">
             <MapPin size={14} className="mt-px shrink-0 text-primary" />
             <span>
               <strong className="block text-ink">{info.address}</strong>
               {info.neighborhood}
             </span>
           </p>
-          <p className="flex items-start gap-1.5 text-[11px] text-secondary">
+          <p className="flex items-start gap-1.5 text-[13px] text-secondary">
             <Clock size={14} className="mt-px shrink-0 text-primary" />
             <span>
               <strong className="block text-ink">
@@ -73,17 +94,26 @@ export default function AyudaPage() {
               Sáb {saturday.closed ? "cerrado" : formatDayHours(saturday, "–")} · {DAY_NAMES[0]} {hours[0].closed ? "cerrado" : formatDayHours(hours[0], "–")}
             </span>
           </p>
-          <a href={`mailto:${info.email}`} className="flex items-center gap-1.5 text-[11px] font-semibold text-primary">
-            <Mail size={14} /> {info.email}
-          </a>
-          <span className="flex items-center gap-1.5 text-[11px] font-semibold text-primary">
-            <AtSign size={14} /> {info.instagram}
-          </span>
+          {info.email && (
+            <a href={`mailto:${info.email}`} className="flex min-h-11 min-w-0 items-center gap-1.5 text-[13px] font-semibold text-primary">
+              <Mail size={14} className="shrink-0" /> <span className="truncate">{info.email}</span>
+            </a>
+          )}
+          {info.instagram && (
+            <a
+              href={`https://instagram.com/${info.instagram.replace("@", "")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-h-11 min-w-0 items-center gap-1.5 text-[13px] font-semibold text-primary"
+            >
+              <AtSign size={14} className="shrink-0" /> <span className="truncate">{info.instagram}</span>
+            </a>
+          )}
         </section>
 
-        <h2 className="px-0.5 text-[15px] font-semibold">Preguntas frecuentes</h2>
+        <h2 className="section-title px-0.5">Preguntas frecuentes</h2>
         <ul className="flex flex-col gap-1.5">
-          {FAQ.map((item, i) => {
+          {faq.map((item, i) => {
             const expanded = open === i;
             return (
               <li key={item.q} className="card overflow-hidden">
@@ -91,12 +121,12 @@ export default function AyudaPage() {
                   type="button"
                   aria-expanded={expanded}
                   onClick={() => setOpen(expanded ? null : i)}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-[13px] font-semibold"
+                  className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold"
                 >
                   {item.q}
                   <ChevronDown size={16} className={cn("shrink-0 text-secondary transition-transform", expanded && "rotate-180")} />
                 </button>
-                {expanded && <p className="px-3 pb-2.5 text-xs leading-relaxed text-secondary">{item.a}</p>}
+                {expanded && <p className="px-3 pb-2.5 text-[13px] leading-relaxed text-secondary">{item.a}</p>}
               </li>
             );
           })}

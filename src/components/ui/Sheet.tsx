@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { ease, spring } from "@/lib/motion";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { useIsDesktop } from "@/lib/useMediaQuery";
 
 interface SheetProps {
@@ -58,6 +59,7 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
   onCloseRef.current = onClose;
   const dragControls = useDragControls();
   const isDesktop = useIsDesktop();
+  useFocusTrap(panelRef);
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -154,7 +156,7 @@ function SheetPanel({ onClose, title, subtitle, children, footer, className }: O
             onClick={onClose}
             onPointerDown={(e) => e.stopPropagation()}
             aria-label="Cerrar"
-            className="tap flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-low text-secondary"
+            className="tap -mr-1 -mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-low text-secondary"
           >
             <X size={18} />
           </button>

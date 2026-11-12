@@ -10,10 +10,11 @@ export function isValidDepositRate(rate: number): boolean {
   return Number.isFinite(rate) && rate >= 0 && rate <= 1;
 }
 
-/** Horas límite antes del turno para abonar la seña en efectivo en el local. */
+/**
+ * Valores por defecto de los plazos. Cada barbería tiene los suyos en sus reglas de reserva
+ * (`rulesOf(state).cashDeadlineHours` y `.cancelHours`): las pantallas y el servidor usan esos.
+ */
 export const CASH_DEPOSIT_DEADLINE_HOURS = 4;
-
-/** Cancelación / reprogramación sin perder la seña hasta N horas antes. */
 export const FREE_CANCELLATION_HOURS = 3;
 
 /**
@@ -38,6 +39,29 @@ export const REMINDER_LEAD_HOURS = 24;
 
 /** La seña cuenta como cobrada solo si está acreditada; `en_revision` todavía no es plata. */
 export const isDepositPaid = (deposit: Pick<Deposit, "status">): boolean => deposit.status === "abonada";
+
+/**
+ * Tasa de seña de un servicio: la suya si la tiene, si no la del local.
+ * Un servicio puede pedir seña aunque el local no (o al revés), por ejemplo solo en el color.
+ */
+export function serviceDepositRate(service: { depositRate?: number } | undefined, shopRate: number): number {
+  const own = service?.depositRate;
+  return own !== undefined && isValidDepositRate(own) ? own : shopRate;
+}
+
+/** "30%" a partir de la tasa (0.3). */
+export function depositPercent(rate: number): string {
+  return `${Math.round((isValidDepositRate(rate) ? rate : DEFAULT_DEPOSIT_RATE) * 100)}%`;
+}
+
+/**
+ * Porcentaje de la seña que quedó fijada en un turno. Se deduce del monto y no de la tasa de hoy,
+ * porque el local puede haberla cambiado después de la reserva.
+ */
+export function appointmentDepositPercent(appointment: { deposit: Pick<Deposit, "amount">; servicePrice: number }): string {
+  if (appointment.servicePrice <= 0) return depositPercent(DEFAULT_DEPOSIT_RATE);
+  return `${Math.round((appointment.deposit.amount / appointment.servicePrice) * 100)}%`;
+}
 
 export interface DepositSplit {
   total: number;

@@ -1,26 +1,103 @@
 import { addDays, dateTime, fromISODate, minutesToTime, timeToMinutes, todayISO, toISODate } from "./dates";
-import type { Appointment, BusinessHours, DayHours, TimeBlock, TimeRange } from "./types";
+import type { Appointment, Barber, BookingRules, BusinessHours, DayHours, TimeBlock, TimeRange } from "./types";
 
+/** Paso por defecto entre turnos. Cada local lo cambia en sus reglas de reserva. */
 export const SLOT_STEP_MIN = 30;
 export const AFTERNOON_FROM = "14:00";
-/** Anticipación mínima para reservar un turno del día. */
+/** Anticipación mínima por defecto para reservar un turno del día. */
 export const MIN_LEAD_MIN = 30;
 
 /**
- * Hasta dónde puede reservar un cliente por su cuenta: dos semanas desde hoy.
+ * Hasta dónde puede reservar un cliente por su cuenta, por defecto: dos semanas desde hoy.
  * El staff no tiene tope — agenda el día que quiera.
  */
 export const CLIENT_BOOKING_DAYS = 14;
 
+/** Reglas con las que arranca una barbería, y las que se usan si falta el dato. */
+export const DEFAULT_BOOKING_RULES: BookingRules = {
+  slotStepMin: SLOT_STEP_MIN,
+  bufferMin: 0,
+  windowDays: CLIENT_BOOKING_DAYS,
+  minLeadMin: MIN_LEAD_MIN,
+  cancelHours: 3,
+  cashDeadlineHours: 4,
+};
+
+/** Opciones que ofrece la configuración. El servidor valida rangos, no solo estas. */
+export const SLOT_STEP_OPTIONS = [10, 15, 20, 30, 45, 60] as const;
+export const BUFFER_OPTIONS = [0, 5, 10, 15, 20, 30] as const;
+
+/** Rango válido de cada regla: [mínimo, máximo]. */
+const RULE_LIMITS: Record<keyof BookingRules, [number, number]> = {
+  slotStepMin: [10, 60],
+  bufferMin: [0, 60],
+  windowDays: [1, 120],
+  minLeadMin: [0, 2880],
+  cancelHours: [0, 72],
+  cashDeadlineHours: [1, 72],
+};
+
+const RULE_ERRORS: Record<keyof BookingRules, (min: number, max: number) => string> = {
+  slotStepMin: (a, b) => `Los turnos tienen que arrancar cada ${a} a ${b} minutos`,
+  bufferMin: (_a, b) => `El tiempo entre turnos va de 0 a ${b} minutos`,
+  windowDays: (a, b) => `La reserva anticipada va de ${a} a ${b} días`,
+  minLeadMin: (_a, b) => `La anticipación mínima va de 0 a ${b / 60} horas`,
+  cancelHours: (_a, b) => `El plazo para cancelar va de 0 a ${b} horas`,
+  cashDeadlineHours: (a, b) => `El plazo de la seña en efectivo va de ${a} a ${b} horas`,
+};
+
+/** Reglas completas: lo que falta (bases viejas o el caché del navegador) sale del default. */
+export function rulesOf(source: { bookingRules?: Partial<BookingRules> } | undefined): BookingRules {
+  return { ...DEFAULT_BOOKING_RULES, ...(source?.bookingRules ?? {}) };
+}
+
+/** Devuelve el mensaje de error, o null si las reglas son válidas. */
+export function validateBookingRules(rules: BookingRules): string | null {
+  for (const key of Object.keys(RULE_LIMITS) as (keyof BookingRules)[]) {
+    const [min, max] = RULE_LIMITS[key];
+    const value = rules[key];
+    if (!Number.isInteger(value) || value < min || value > max) return RULE_ERRORS[key](min, max);
+  }
+  return null;
+}
+
+/** "2 semanas", "10 días", "1 día": para los textos que ve el cliente. */
+export function windowLabel(days: number): string {
+  if (days % 7 === 0) return days === 7 ? "1 semana" : `${days / 7} semanas`;
+  return days === 1 ? "1 día" : `${days} días`;
+}
+
 /** Último día que un cliente puede elegir al reservar (inclusive). */
-export function clientBookingLimit(now = new Date()): string {
-  return addDays(toISODate(now), CLIENT_BOOKING_DAYS);
+export function clientBookingLimit(now = new Date(), days = CLIENT_BOOKING_DAYS): string {
+  return addDays(toISODate(now), days);
 }
 
 /** ¿Puede un cliente reservar ese día por su cuenta? */
-export function withinClientWindow(date: string, now = new Date()): boolean {
-  return date >= toISODate(now) && date <= clientBookingLimit(now);
+export function withinClientWindow(date: string, now = new Date(), days = CLIENT_BOOKING_DAYS): boolean {
+  return date >= toISODate(now) && date <= clientBookingLimit(now, days);
 }
+
+/** Horario con el que atiende un barbero: el suyo si lo tiene, si no el del local. */
+export function barberHours(barber: Pick<Barber, "schedule"> | undefined, shopHours?: BusinessHours): BusinessHours | undefined {
+  return barber?.schedule?.length === 7 ? barber.schedule : shopHours;
+}
+
+/** ¿El bloqueo ocupa ese día? Contempla los de varios días y los que se repiten. */
+export function blockAppliesOn(block: TimeBlock, date: string): boolean {
+  if (date < block.date) return false;
+  if (block.until && date > block.until) return false;
+  if (block.weekdays?.length) return block.weekdays.includes(fromISODate(date).getDay());
+  return block.until ? true : date === block.date;
+}
+
+/** ¿El bloqueo todavía puede ocupar algún día desde `today`? */
+export function blockIsCurrent(block: TimeBlock, today: string): boolean {
+  if (block.weekdays?.length) return !block.until || block.until >= today;
+  return (block.until ?? block.date) >= today;
+}
+
+/** Valor especial de `barberId` al reservar: cualquier barbero, el primero que esté libre. */
+export const ANY_BARBER = "*";
 
 export const DEFAULT_BUSINESS_HOURS: BusinessHours = [
   { open: "09:00", close: "20:00", closed: true }, // Domingo
@@ -111,6 +188,8 @@ export function shiftOf(time: string): Shift {
 export interface Slot {
   time: string;
   available: boolean;
+  /** Solo con `walkIn`: el horario que está corriendo ahora (empezó y todavía no terminó). */
+  current?: boolean;
 }
 
 interface SlotQuery {
@@ -123,6 +202,13 @@ interface SlotQuery {
   /** Turno a ignorar (para reprogramar/mover). */
   excludeAppointmentId?: string;
   now?: Date;
+  /**
+   * Agenda del local (cliente que entra sin turno): sin anticipación mínima y ofreciendo
+   * también el horario en curso. El cliente sigue con la anticipación mínima del local.
+   */
+  walkIn?: boolean;
+  /** Reglas del local (paso, anticipación y tiempo entre turnos). Sin esto, las de siempre. */
+  rules?: Pick<BookingRules, "slotStepMin" | "minLeadMin" | "bufferMin">;
 }
 
 function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number) {
@@ -138,7 +224,11 @@ export function buildSlots({
   hours,
   excludeAppointmentId,
   now = new Date(),
+  walkIn = false,
+  rules = DEFAULT_BOOKING_RULES,
 }: SlotQuery): Slot[] {
+  const step = rules.slotStepMin;
+  const buffer = rules.bufferMin;
   const opening = openingHours(date, hours);
   if (!opening) return [];
 
@@ -157,9 +247,10 @@ export function buildSlots({
           // Reserva digital cuyo plazo de pago venció: el horario ya está libre.
           !(a.holdUntil !== undefined && a.holdUntil <= nowISO),
       )
-      .map((a) => [timeToMinutes(a.time), timeToMinutes(a.time) + a.durationMin] as const),
+      // El tiempo entre turnos cuenta como ocupado a los dos lados: nadie entra pegado a otro.
+      .map((a) => [timeToMinutes(a.time) - buffer, timeToMinutes(a.time) + a.durationMin + buffer] as const),
     ...blocks
-      .filter((b) => b.date === date && b.barberId === barberId)
+      .filter((b) => b.barberId === barberId && blockAppliesOn(b, date))
       .map((b) => [timeToMinutes(b.start), timeToMinutes(b.end)] as const),
   ];
 
@@ -168,13 +259,13 @@ export function buildSlots({
   for (const range of opening.ranges) {
     const open = timeToMinutes(range.open);
     const close = timeToMinutes(range.close);
-    for (let start = open; start + SLOT_STEP_MIN <= close; start += SLOT_STEP_MIN) {
+    for (let start = open; start + step <= close; start += step) {
       const end = start + durationMin;
-      const available =
-        end <= close &&
-        !(isToday && start < nowMin + MIN_LEAD_MIN) &&
-        !busy.some(([bs, be]) => overlaps(start, end, bs, be));
-      slots.push({ time: minutesToTime(start), available });
+      // Con `walkIn`, el horario en curso (empezó hace menos de un paso) todavía se puede dar.
+      const current = walkIn && isToday && start <= nowMin && nowMin < start + step;
+      const tooSoon = isToday && !current && start < nowMin + (walkIn ? 0 : rules.minLeadMin);
+      const available = end <= close && !tooSoon && !busy.some(([bs, be]) => overlaps(start, end, bs, be));
+      slots.push(current ? { time: minutesToTime(start), available, current } : { time: minutesToTime(start), available });
     }
   }
   return slots;
@@ -239,7 +330,7 @@ export function weekSlots({
 
 /** Primer horario libre de un sillón a partir de ahora (o de la apertura si no es hoy). */
 export function nextFreeTime(query: Omit<SlotQuery, "durationMin">): string | null {
-  const slot = buildSlots({ ...query, durationMin: SLOT_STEP_MIN }).find((s) => s.available);
+  const slot = buildSlots({ ...query, durationMin: query.rules?.slotStepMin ?? SLOT_STEP_MIN }).find((s) => s.available);
   return slot?.time ?? null;
 }
 
@@ -283,4 +374,44 @@ export function cashDepositDeadline(date: string, time: string, hours?: Business
     if (prev) return dateTime(day, prev.close);
   }
   return raw;
+}
+
+interface FreeBarbersQuery extends Omit<SlotQuery, "barberId" | "hours"> {
+  time: string;
+  barbers: Pick<Barber, "id" | "active" | "schedule">[];
+  shopHours?: BusinessHours;
+}
+
+/**
+ * Para "me da igual el barbero": los que tienen libre ese horario, primero el que menos
+ * trabajo tiene ese día. Así la carga se reparte sola entre los sillones.
+ */
+export function freeBarbersAt({ time, barbers, shopHours, ...query }: FreeBarbersQuery): string[] {
+  const load = (barberId: string) =>
+    query.appointments
+      .filter((a) => a.date === query.date && a.barberId === barberId && a.status !== "cancelado")
+      .reduce((sum, a) => sum + a.durationMin, 0);
+  return barbers
+    .filter((b) => b.active)
+    .filter((b) =>
+      buildSlots({ ...query, barberId: b.id, hours: barberHours(b, shopHours) }).some((s) => s.time === time && s.available),
+    )
+    .map((b) => ({ id: b.id, load: load(b.id) }))
+    .sort((a, b) => a.load - b.load)
+    .map((b) => b.id);
+}
+
+/**
+ * Horarios del día sumando todos los sillones: un horario está libre si al menos un barbero
+ * lo tiene libre. Es lo que ve el cliente que eligió "me da igual".
+ */
+export function anyBarberSlots({ barbers, shopHours, ...query }: Omit<FreeBarbersQuery, "time">): Slot[] {
+  const byTime = new Map<string, Slot>();
+  for (const b of barbers.filter((x) => x.active)) {
+    for (const slot of buildSlots({ ...query, barberId: b.id, hours: barberHours(b, shopHours) })) {
+      const prev = byTime.get(slot.time);
+      if (!prev || (!prev.available && slot.available)) byTime.set(slot.time, slot);
+    }
+  }
+  return [...byTime.values()].sort((a, b) => a.time.localeCompare(b.time));
 }

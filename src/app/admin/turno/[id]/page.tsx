@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ChevronDown, ChevronRight, CircleX, Minus, NotebookPen, Pencil, Phone, Plus, Smartphone, Trash2, UserX } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleX, MessageCircle, Minus, NotebookPen, Pencil, Phone, Plus, Trash2, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/cn";
 import { hoursUntil, longDate } from "@/lib/dates";
 import { money, paymentMethodLabel, whatsappLink } from "@/lib/format";
 import { ease, spring } from "@/lib/motion";
-import { appointmentTotals } from "@/lib/pricing";
+import { appointmentDepositPercent, appointmentTotals } from "@/lib/pricing";
 import { addProductToAppointment, cancelAppointment, deleteAppointment, markNoShow, registerDeposit, rejectDeposit, removeProductFromAppointment } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
@@ -105,7 +105,7 @@ export default function AdminTurnoPage() {
                 aria-label="WhatsApp"
                 className="icon-btn bg-surface-low text-primary"
               >
-                <Smartphone size={18} />
+                <MessageCircle size={18} />
               </a>
             </>
           )}
@@ -120,7 +120,7 @@ export default function AdminTurnoPage() {
             </div>
             <div className="row">
               <span className="flex-1 text-[15px]">
-                Seña 50%
+                Seña {appointmentDepositPercent(appointment)}
                 <span className={cn("block text-xs", depositPaid ? "text-mint-ink" : underReview ? "text-amber-ink" : "text-secondary")}>
                   {depositPaid
                     ? `Abonada · ${paymentMethodLabel[appointment.deposit.method]}`
@@ -137,11 +137,11 @@ export default function AdminTurnoPage() {
                   <span className="min-w-0 flex-1 truncate text-[15px]">{p.name}</span>
                   {active && (
                     <span className="flex items-center gap-1.5">
-                      <button type="button" aria-label="Quitar" onClick={() => void removeProductFromAppointment(appointment.id, p.productId)} className="tap flex h-10 w-10 items-center justify-center rounded-full bg-surface-low">
+                      <button type="button" aria-label="Quitar" onClick={() => void removeProductFromAppointment(appointment.id, p.productId)} className="tap flex h-11 w-11 items-center justify-center rounded-full bg-surface-low">
                         <Minus size={14} />
                       </button>
                       <span className="w-4 text-center text-sm font-bold tabular-nums">{p.qty}</span>
-                      <button type="button" aria-label="Sumar" onClick={() => void addProductToAppointment(appointment.id, p.productId)} className="tap flex h-10 w-10 items-center justify-center rounded-full bg-surface-low">
+                      <button type="button" aria-label="Sumar" onClick={() => void addProductToAppointment(appointment.id, p.productId)} className="tap flex h-11 w-11 items-center justify-center rounded-full bg-surface-low">
                         <Plus size={14} />
                       </button>
                     </span>
@@ -205,7 +205,7 @@ export default function AdminTurnoPage() {
                 <Pencil size={16} /> Editar
               </button>
               <button type="button" onClick={() => setConfirm("cancel")} className="tap btn-destructive">
-                <CircleX size={16} /> Cancelar
+                <CircleX size={16} /> Cancelar turno
               </button>
             </div>
             {started && (
@@ -246,9 +246,19 @@ export default function AdminTurnoPage() {
           animate={{ y: 0, transition: spring.sheet }}
           className="sticky bottom-0 z-10 mt-auto border-t border-surface-high bg-surface-lowest/95 px-5 py-3 backdrop-blur-xl"
         >
-          <button type="button" onClick={() => setCharging(depositPaid ? "balance" : "deposit")} className="tap btn-primary text-[15px]">
-            {depositPaid ? `Cobrar ${money(t.dueAtChair)}` : `Registrar seña ${money(t.deposit)}`}
+          {/* Un solo cobro: si la seña no se pagó, el total ya la incluye (ver appointment.charge). */}
+          <button type="button" onClick={() => setCharging("balance")} className="tap btn-primary text-[15px]">
+            Cobrar {money(t.dueAtChair)}
           </button>
+          {!depositPaid && t.deposit > 0 && (
+            <button
+              type="button"
+              onClick={() => setCharging("deposit")}
+              className="tap mt-1 flex min-h-11 w-full items-center justify-center text-[14px] font-semibold text-primary"
+            >
+              Registrar solo la seña ({money(t.deposit)})
+            </button>
+          )}
         </m.div>
       )}
 

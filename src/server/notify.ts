@@ -96,11 +96,12 @@ export function notifyAppointment(
   appointment: Appointment,
   info: ShopInfo,
   to: string | undefined,
+  cancelHours?: number,
 ): void {
   if (!to || !mailReady()) return;
   const email =
     kind === "reservado"
-      ? appointmentBookedEmail(appointment, info)
+      ? appointmentBookedEmail(appointment, info, cancelHours)
       : kind === "cancelado"
         ? appointmentCancelledEmail(appointment, info)
         : appointmentReminderEmail(appointment, info);

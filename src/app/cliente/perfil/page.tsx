@@ -27,12 +27,13 @@ export default function PerfilPage() {
   const emailVerified = useAppStore((s) => s.session?.emailVerified !== false);
   const resendVerification = useAppStore((s) => s.resendVerification);
   const [sending, setSending] = useState(false);
-  const [sheet, setSheet] = useState<"datos" | "password" | null>(null);
+  const [sheet, setSheet] = useState<"datos" | "preferencias" | "password" | null>(null);
 
   if (!client) return null;
 
+  // El switch ya muestra el cambio: sin toast de éxito, solo si falla.
   const toggle = (key: keyof ClientProfile["notifications"], value: boolean) =>
-    void saveClient({ ...client, notifications: { ...client.notifications, [key]: value } }, false);
+    void saveClient({ ...client, notifications: { ...client.notifications, [key]: value } }, false, true);
 
   return (
     <Page className="gap-6 px-5 pb-6 pt-2">
@@ -58,7 +59,7 @@ export default function PerfilPage() {
       <Section title="Cuenta">
         <div className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
           <MenuRow icon={UserRound} label="Mis datos" onClick={() => setSheet("datos")} />
-          <MenuRow icon={Scissors} label="Preferencias de corte" detail={client.preferences ?? "Sin definir"} onClick={() => setSheet("datos")} />
+          <MenuRow icon={Scissors} label="Preferencias de corte" detail={client.preferences ?? "Sin definir"} onClick={() => setSheet("preferencias")} />
           <MenuRow icon={History} label="Historial" href="/cliente/historial" />
           <MenuRow icon={Store} label="Mis barberías" href="/cliente/barberias" />
           <MenuRow icon={KeyRound} label="Cambiar contraseña" onClick={() => setSheet("password")} />
@@ -83,7 +84,8 @@ export default function PerfilPage() {
         <div className="divide-y divide-surface-high overflow-hidden rounded-2xl bg-surface-lowest shadow-xs">
           {(
             [
-              { key: "reminder24h", label: "Recordatorio 24 h antes" },
+              // El local manda el recordatorio por WhatsApp (ver lib/reminders.ts).
+              { key: "reminder24h", label: "Recordatorio 24 h antes por WhatsApp" },
               { key: "whatsapp", label: "Confirmaciones por WhatsApp" },
             ] as const
           ).map((n) => (
@@ -111,7 +113,12 @@ export default function PerfilPage() {
         <LogOut size={17} /> Cerrar sesión
       </button>
 
-      <ProfileSheet open={sheet === "datos"} client={client} onClose={() => setSheet(null)} />
+      <ProfileSheet
+        open={sheet === "datos" || sheet === "preferencias"}
+        focusPreferences={sheet === "preferencias"}
+        client={client}
+        onClose={() => setSheet(null)}
+      />
       <PasswordSheet open={sheet === "password"} onClose={() => setSheet(null)} />
     </Page>
   );
@@ -153,17 +160,36 @@ const profileSchema = z.object({
 });
 type ProfileValues = z.infer<typeof profileSchema>;
 
-function ProfileSheet({ open, client, onClose }: { open: boolean; client: ClientProfile; onClose: () => void }) {
+function ProfileSheet({
+  open,
+  focusPreferences,
+  client,
+  onClose,
+}: {
+  open: boolean;
+  /** Se abrió desde "Preferencias de corte": el cursor arranca en ese campo. */
+  focusPreferences?: boolean;
+  client: ClientProfile;
+  onClose: () => void;
+}) {
   const {
     register,
     handleSubmit,
     reset,
+    setFocus,
     formState: { errors, isSubmitting },
   } = useForm<ProfileValues>({ resolver: zodResolver(profileSchema) });
 
   useEffect(() => {
     if (open) reset({ name: client.name, phone: client.phone, email: client.email ?? "", preferences: client.preferences ?? "" });
   }, [open, client, reset]);
+
+  useEffect(() => {
+    if (!open || !focusPreferences) return;
+    // La hoja enfoca su panel al montarse; el campo se enfoca después, cuando ya está en pantalla.
+    const timer = window.setTimeout(() => setFocus("preferences"), 80);
+    return () => window.clearTimeout(timer);
+  }, [open, focusPreferences, setFocus]);
 
   const onSubmit = async (v: ProfileValues) => {
     const result = await saveClient({ ...client, ...v, email: v.email || undefined, preferences: v.preferences || undefined }, false);
@@ -177,7 +203,7 @@ function ProfileSheet({ open, client, onClose }: { open: boolean; client: Client
       title="Mis datos"
       footer={
         <button type="submit" form="profile-form" disabled={isSubmitting} className="tap btn-primary">
-          Guardar
+          {isSubmitting ? "Guardando…" : "Guardar"}
         </button>
       }
     >

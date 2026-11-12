@@ -136,7 +136,9 @@ export async function pickFirstSlot(scope: Page | ReturnType<Page["locator"]>) {
     await group.getByRole("radio").first().click();
     await expect(selected).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
-  return (await selected.textContent())?.trim() ?? "";
+  // El horario en curso se muestra como "Ahora": la hora queda en su nombre accesible.
+  const label = await selected.getAttribute("aria-label");
+  return label?.match(/\d{2}:\d{2}/)?.[0] ?? (await selected.textContent())?.trim() ?? "";
 }
 
 const MONTH_LONG = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];

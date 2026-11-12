@@ -64,7 +64,6 @@ test.describe("carta pública del local", () => {
     await expect(page.getByLabel("Celular")).toHaveValue("11 4444 7788");
     await page.getByLabel("Email").fill("lucas.invitado@example.com");
     await page.getByLabel("Contraseña", { exact: true }).fill("clave-segura-1");
-    await page.getByLabel("Repetir contraseña").fill("clave-segura-1");
     await page.getByLabel(/Acepto las/).check();
     await page.getByRole("button", { name: "Crear cuenta" }).click();
 

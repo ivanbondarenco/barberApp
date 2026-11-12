@@ -10,8 +10,8 @@ test.describe("Landing", () => {
   test("sin sesión, la portada presenta la app y el alta se abre en un modal", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Una sola agenda");
-    await expect(page.getByText("2 cortes", { exact: false }).first()).toBeVisible();
-    await page.getByRole("link", { name: "Probar la demo gratis" }).first().click();
+    await expect(page.getByText("$25.000", { exact: false }).first()).toBeVisible();
+    await page.getByRole("main").getByRole("link", { name: "Probar gratis" }).first().click();
     const signup = page.getByRole("dialog", { name: "Registrar mi barbería" });
     await expect(signup.getByLabel("Nombre de la barbería")).toBeVisible();
     // Sigue en la portada: el modal no navega.
@@ -29,7 +29,7 @@ test.describe("Landing", () => {
 
   test("el alta desde el modal crea la barbería y entra al panel", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "Empezar mi prueba gratis" }).click();
+    await page.locator("#precio").getByRole("link", { name: "Probar gratis" }).click();
     const signup = page.getByRole("dialog", { name: "Registrar mi barbería" });
     await signup.getByLabel("Nombre de la barbería").fill("Barbería del Modal");
     await signup.getByLabel("Dirección").fill("Av. Corrientes 1234");
@@ -44,7 +44,7 @@ test.describe("Landing", () => {
 
   test("el alta no deja escribir letras en el teléfono ni números en el nombre", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "Probar la demo gratis" }).first().click();
+    await page.getByRole("main").getByRole("link", { name: "Probar gratis" }).first().click();
     const signup = page.getByRole("dialog", { name: "Registrar mi barbería" });
     await signup.getByLabel("Tu número de teléfono").pressSequentially("11abc3096x9716");
     await expect(signup.getByLabel("Tu número de teléfono")).toHaveValue("1130969716");
@@ -173,7 +173,9 @@ test.describe("Sesión y rutas protegidas", () => {
     await loginAsClient(page);
     await page.reload();
     await expect(page).toHaveURL(/cliente\/reservar/);
-    await page.getByRole("button", { name: "Abrir menú de cuenta" }).click();
+    // El avatar del cliente lleva directo al perfil, donde está "Cerrar sesión".
+    await page.getByRole("link", { name: "Mi perfil" }).click();
+    await page.waitForURL("**/cliente/perfil");
     await page.getByRole("button", { name: "Cerrar sesión" }).click();
     await page.waitForURL("**/auth/login");
     expect((await pageState(page)).session).toBeNull();
@@ -201,13 +203,11 @@ test.describe("Registro y recuperación", () => {
     await page.getByLabel("Email").fill(BRUNO.email);
     await page.getByLabel("Celular").fill(BRUNO.phone);
     await page.getByLabel("Contraseña", { exact: true }).fill("corta");
-    await page.getByLabel("Repetir contraseña").fill("corta");
     await page.getByLabel(/Acepto las/).check();
     await page.getByRole("button", { name: "Crear cuenta" }).click();
     await expect(page.getByText("Usá al menos 8 caracteres")).toBeVisible();
 
     await page.getByLabel("Contraseña", { exact: true }).fill(BRUNO.password);
-    await page.getByLabel("Repetir contraseña").fill(BRUNO.password);
     await page.getByRole("button", { name: "Crear cuenta" }).click();
     // Llegó por el link del local: ya queda sumado a esa barbería y va directo a reservar.
     await page.waitForURL("**/cliente/reservar");

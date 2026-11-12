@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { homeFor, ScreenLoader } from "@/components/layout/RoleGuard";
@@ -19,6 +19,8 @@ export default function ReservarSinCuentaPage() {
   const synced = useAppStore((s) => s.synced);
   const session = useAppStore((s) => s.session);
   const shop = useAppStore((s) => s.shop);
+  // El "volver" del header retrocede de a un paso en la reserva (lo cuelga BookingFlow).
+  const stepBack = useRef<(() => boolean) | null>(null);
 
   // Confirma con el servidor la sesión y la barbería del link antes de decidir qué mostrar.
   useEffect(() => {
@@ -35,9 +37,9 @@ export default function ReservarSinCuentaPage() {
   if (!hydrated || !synced || session || !shop) return <ScreenLoader />;
 
   return (
-    <PublicShell title={shop.name} fallbackHref="/local">
+    <PublicShell title={shop.name} fallbackHref="/local" onBack={() => stepBack.current?.() ?? false}>
       <Suspense>
-        <BookingFlow guest />
+        <BookingFlow guest backRef={stepBack} />
       </Suspense>
       <p className="px-5 pb-6 text-center text-[13px] text-secondary">
         ¿Tenés cuenta?{" "}

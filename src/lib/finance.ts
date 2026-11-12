@@ -147,3 +147,39 @@ export function periodTotals(appointments: Appointment[], from: string, to: stri
       .slice(0, 5),
   };
 }
+
+export interface Movement {
+  id: string;
+  appointmentId: string;
+  date: string;
+  time: string;
+  label: string;
+  concept: "Seña" | "Saldo";
+  method: PaymentMethod;
+  amount: number;
+}
+
+/**
+ * Cobros registrados en un rango (por fecha del turno), del más reciente al más viejo.
+ * Usa el mismo criterio que `periodTotals`: solo la seña acreditada cuenta como plata.
+ */
+export function paymentMovements(appointments: Appointment[], from: string, to: string): Movement[] {
+  const list: Movement[] = [];
+  for (const a of appointments) {
+    if (a.date < from || a.date > to || a.status === "cancelado") continue;
+    const base = { appointmentId: a.id, date: a.date, time: a.time, label: a.clientName };
+    if (isDepositPaid(a.deposit)) {
+      list.push({ ...base, id: `${a.id}-sena`, concept: "Seña", method: a.deposit.method, amount: appointmentTotals(a).depositPaid });
+    }
+    if (a.balancePayment) {
+      list.push({ ...base, id: `${a.id}-saldo`, concept: "Saldo", method: a.balancePayment.method, amount: a.balancePayment.amount });
+    }
+  }
+  return list.sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
+}
+
+/** Variación porcentual contra el período anterior. `null` si antes no hubo nada con qué comparar. */
+export function percentChange(current: number, previous: number): number | null {
+  if (previous <= 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}

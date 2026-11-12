@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { passwordSchema } from "@/lib/password";
 import { getCurrentUser, type UserRow } from "@/server/auth";
+import { assertShopOperational } from "@/server/billing-access";
 import { hashPassword, normalizeIdentifier } from "@/server/crypto";
 import { queryOne } from "@/server/db";
 import { errorResponse, json, readBody } from "@/server/http";
@@ -30,6 +31,8 @@ export async function POST(request: Request) {
     const shopId = current.actor.shopId;
     const { barberId, identifier, password } = await readBody(request, schema);
     const db = await ensureSeeded();
+    // Con la suscripción suspendida el staff no opera: tampoco da accesos nuevos.
+    assertShopOperational(db, current.actor);
     if (!queryOne(db, "SELECT id FROM barbers WHERE shop_id = ? AND id = ?", [shopId, barberId])) {
       return json({ error: "El barbero no existe" }, 404);
     }

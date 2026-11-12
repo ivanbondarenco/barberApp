@@ -1,10 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, Percent, Trash2 } from "lucide-react";
+import { CalendarClock, KeyRound, Percent, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { WeekHoursEditor, weekHoursError } from "@/components/admin/WeekHoursEditor";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
@@ -12,7 +13,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { initials, uid } from "@/lib/format";
 import { PASSWORD_MIN } from "@/lib/password";
-import type { Barber } from "@/lib/types";
+import type { Barber, BusinessHours } from "@/lib/types";
 import { deleteBarber, saveBarber, saveStaffAccount } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/store/useToast";
@@ -44,8 +45,12 @@ type Values = z.infer<typeof schema>;
 
 export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barber?: Barber; onClose: () => void }) {
   const barbers = useAppStore((s) => s.barbers);
+  const shopHours = useAppStore((s) => s.businessHours);
   const isNew = !barber;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Horario propio: si está apagado, atiende en el horario del local. */
+  const [ownSchedule, setOwnSchedule] = useState(false);
+  const [schedule, setSchedule] = useState<BusinessHours>(shopHours);
   const {
     register,
     handleSubmit,
@@ -68,12 +73,17 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
       commissionKind: barber?.commission?.kind ?? "none",
       commissionValue: barber?.commission ? String(barber.commission.value) : "",
     });
+    setOwnSchedule(!!barber?.schedule);
+    // Al prenderlo por primera vez arranca con el horario del local, para ajustar solo lo distinto.
+    setSchedule(barber?.schedule ?? shopHours);
   }, [open, barber]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = useWatch({ control, name: "active" });
   const commissionKind = useWatch({ control, name: "commissionKind" });
 
   const onSubmit = async (v: Values) => {
+    const scheduleError = ownSchedule ? weekHoursError(schedule) : null;
+    if (scheduleError) return toast(`Horario: ${scheduleError}`, "error");
     const id = barber?.id ?? uid("b");
     const result = await saveBarber(
       {
@@ -88,6 +98,7 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
           v.commissionKind === "none"
             ? undefined
             : { kind: v.commissionKind, value: Number(v.commissionValue.replace(",", ".")) },
+        schedule: ownSchedule ? schedule : undefined,
       },
       isNew,
     );
@@ -146,6 +157,22 @@ export function BarberFormSheet({ open, barber, onClose }: { open: boolean; barb
             </span>
             <Switch checked={!!active} onChange={(v) => setValue("active", v)} label="Recibe reservas" />
           </label>
+          <fieldset className="mt-1 flex flex-col gap-3 rounded-2xl bg-surface-low p-3">
+            <legend className="sr-only">Horario</legend>
+            <div className="flex items-center justify-between gap-3">
+              <span>
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <CalendarClock size={15} className="text-primary" aria-hidden /> Horario propio
+                </span>
+                <span className="block text-xs text-secondary">
+                  {ownSchedule ? "Solo toma turnos en estos días y horarios." : "Atiende en el horario del local."}
+                </span>
+              </span>
+              <Switch checked={ownSchedule} onChange={setOwnSchedule} label="Horario propio" />
+            </div>
+            {ownSchedule && <WeekHoursEditor value={schedule} onChange={setSchedule} idPrefix="bf-hours" />}
+            <p className="text-xs text-secondary">Para vacaciones o un franco suelto, usá Bloquear en la agenda.</p>
+          </fieldset>
           <fieldset className="mt-1 flex flex-col gap-3 rounded-2xl bg-surface-low p-3">
             <legend className="sr-only">Comisión</legend>
             <p className="flex items-center gap-1.5 text-sm font-medium">

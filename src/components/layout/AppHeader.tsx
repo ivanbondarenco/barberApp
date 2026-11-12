@@ -8,24 +8,23 @@ import {
   CircleHelp,
   CloudOff,
   Contact,
+  CreditCard,
   ExternalLink,
   FileText,
   MessageCircle,
   ReceiptText,
-  History,
   ImageUp,
   LogOut,
   type LucideIcon,
   Settings,
   Store,
-  UserRound,
   Users,
   Check,
   Plus,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { NAV } from "@/components/motion/Page";
 import { CLIENT_SHOPS_PATH } from "@/components/layout/RoleGuard";
 import { Sheet } from "@/components/ui/Sheet";
@@ -49,10 +48,8 @@ interface MenuLink {
   icon: LucideIcon;
 }
 
-const CLIENT_LINKS: MenuLink[] = [
-  { href: "/cliente/perfil", label: "Mi perfil", icon: UserRound },
-  { href: "/cliente/historial", label: "Historial de turnos", icon: History },
-  { href: CLIENT_SHOPS_PATH, label: "Mis barberías", icon: Store },
+/** Cliente que todavía no eligió barbería: no tiene pestaña Perfil, así que el menú le da la salida. */
+const CLIENT_NO_SHOP_LINKS: MenuLink[] = [
   { href: "/politicas", label: "Políticas de seña", icon: FileText },
   { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
@@ -64,6 +61,7 @@ const OWNER_LINKS: MenuLink[] = [
   { href: "/admin/sueldos", label: "Sueldos y adelantos", icon: ReceiptText },
   { href: "/admin/contenido", label: "Contenido para redes", icon: ImageUp },
   { href: "/admin/configuracion", label: "Configuración", icon: Settings },
+  { href: "/admin/suscripcion", label: "Suscripción", icon: CreditCard },
 ];
 
 /** El barbero no maneja el equipo ni la configuración del local. */
@@ -75,16 +73,49 @@ const BARBER_LINKS: MenuLink[] = [
   { href: "/ayuda", label: "Ayuda", icon: CircleHelp },
 ];
 
+/**
+ * Navegaciones dentro de la app desde que se cargó la página. Vive en memoria a propósito:
+ * una carga completa (link externo, vuelta de Mercado Pago, pestaña nueva) la pone en cero,
+ * y ahí "atrás" del historial podría sacar al usuario de la app.
+ */
+let lastPath: string | null = null;
+let inAppNavigations = 0;
+
+function useInAppHistory() {
+  const pathname = usePathname();
+  useEffect(() => {
+    if (lastPath !== null && lastPath !== pathname) inAppNavigations += 1;
+    lastPath = pathname;
+  }, [pathname]);
+}
+
 export function AppHeader({ title, backHref, right }: AppHeaderProps) {
   const router = useRouter();
   const session = useAppStore((s) => s.session);
   const offline = useAppStore((s) => s.offline);
   const logout = useAppStore((s) => s.logout);
   const [menuOpen, setMenuOpen] = useState(false);
+  useInAppHistory();
 
-  const links = session?.role === "admin" ? OWNER_LINKS : session?.role === "barbero" ? BARBER_LINKS : CLIENT_LINKS;
   const isStaffSession = session?.role === "admin" || session?.role === "barbero";
+  // El cliente con barbería tiene todo en la pestaña Perfil: su avatar va directo ahí, sin menú.
+  const hasMenu = isStaffSession || !session?.shop;
+  const links = session?.role === "admin" ? OWNER_LINKS : session?.role === "barbero" ? BARBER_LINKS : CLIENT_NO_SHOP_LINKS;
   const roleLabel = session?.role === "admin" ? "Dueño del local" : session?.role === "barbero" ? "Barbero" : "Cliente";
+
+  // Si se llegó navegando dentro de la app, "atrás" vuelve a donde estaba (con su scroll y filtros).
+  // Si se entró directo a esta pantalla, va al padre lógico sin dejar una entrada extra.
+  const goBack = () => {
+    if (!backHref) return;
+    if (inAppNavigations > 0 && window.history.length > 1) router.back();
+    else router.replace(backHref, { transitionTypes: [...NAV.back] });
+  };
+
+  const avatar = (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-on-primary">
+      {initials(session?.name ?? "DS")}
+    </span>
+  );
 
   return (
     <header
@@ -93,12 +124,7 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
     >
       <div className="mx-auto flex h-14 w-full items-center gap-2 px-2 lg:h-16 lg:max-w-[900px] lg:px-4">
         {backHref ? (
-          <button
-            type="button"
-            onClick={() => router.push(backHref, { transitionTypes: [...NAV.back] })}
-            aria-label="Volver"
-            className="icon-btn"
-          >
+          <button type="button" onClick={goBack} aria-label="Volver" className="icon-btn">
             <ArrowLeft size={22} />
           </button>
         ) : (
@@ -113,90 +139,107 @@ export function AppHeader({ title, backHref, right }: AppHeaderProps) {
         {right}
         {session?.role === "cliente" && session.shop && <ShopSwitcher />}
         {isStaffSession && <NotificationBell />}
-        {/* Se ve como botón: avatar, nombre y flecha. En el celular, avatar y flecha. */}
-        <button
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Abrir menú de cuenta"
-          aria-haspopup="dialog"
-          className="tap mr-1 flex min-h-11 items-center gap-2 rounded-full border border-surface-high bg-surface-lowest py-1 pl-1 pr-2.5 shadow-xs transition-colors hover:border-primary-fixed hover:bg-surface-low"
-        >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-on-primary">
-            {initials(session?.name ?? "DS")}
-          </span>
-          <span className="hidden min-w-0 max-w-40 text-left leading-tight lg:block">
-            <span className="block truncate text-sm font-semibold">{session?.name ?? "Mi cuenta"}</span>
-            <span className="block text-[11px] text-secondary">{roleLabel}</span>
-          </span>
-          <ChevronDown size={16} className="shrink-0 text-secondary" aria-hidden />
-        </button>
-      </div>
-
-      <Sheet
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        title={session?.name ?? "Mi cuenta"}
-        subtitle={session?.role === "admin" ? "Dueño del local" : session?.role === "barbero" ? "Barbero" : session?.identifier}
-      >
-        <nav className="flex flex-col gap-3 pb-2" aria-label="Menú de cuenta">
-          <ul className="overflow-hidden rounded-2xl bg-surface-low">
-            {links.map(({ href, label, icon: Icon }) => (
-              <li key={href} className="border-b border-surface-high last:border-0">
-                <Link
-                  href={href}
-                  transitionTypes={[...NAV.forward]}
-                  onClick={() => setMenuOpen(false)}
-                  className="row font-medium hover:bg-surface-container"
-                >
-                  <Icon size={19} className="text-primary" aria-hidden />
-                  <span className="flex-1">{label}</span>
-                  <ChevronRight size={17} className="text-secondary" aria-hidden />
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {(session?.role === "admin" || session?.role === "barbero") && (
-            <a
-              href={whatsappLink(
-                SUPPORT_WHATSAPP,
-                `Hola, soy ${session.name}${session.shop ? ` de ${session.shop.name}` : ""}. Necesito ayuda con BarberApp.`,
-              )}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setMenuOpen(false)}
-              className="row rounded-2xl bg-mint font-semibold text-mint-ink"
-            >
-              <MessageCircle size={19} aria-hidden />
-              <span className="flex-1">
-                Soporte por WhatsApp
-                <span className="block text-xs font-medium">Escribinos ante cualquier duda</span>
-              </span>
-              <ExternalLink size={16} aria-hidden />
-            </a>
-          )}
+        {hasMenu ? (
+          // Se ve como botón: avatar, nombre y flecha. En el celular, avatar y flecha.
           <button
             type="button"
-            className="tap btn-destructive"
-            onClick={async () => {
-              setMenuOpen(false);
-              await logout();
-              router.replace("/auth/login");
-            }}
+            onClick={() => setMenuOpen(true)}
+            aria-label="Abrir menú de cuenta"
+            aria-haspopup="dialog"
+            className="tap mr-1 flex min-h-11 items-center gap-2 rounded-full border border-surface-high bg-surface-lowest py-1 pl-1 pr-2.5 shadow-xs transition-colors hover:border-primary-fixed hover:bg-surface-low"
           >
-            <LogOut size={17} /> Cerrar sesión
+            {avatar}
+            <span className="hidden min-w-0 max-w-40 text-left leading-tight lg:block">
+              <span className="block truncate text-sm font-semibold">{session?.name ?? "Mi cuenta"}</span>
+              <span className="block text-xs text-secondary">{roleLabel}</span>
+            </span>
+            <ChevronDown size={16} className="shrink-0 text-secondary" aria-hidden />
           </button>
-        </nav>
-      </Sheet>
+        ) : (
+          // El cliente ya tiene todo en la pestaña Perfil: el avatar lleva directo ahí.
+          <Link
+            href="/cliente/perfil"
+            transitionTypes={[...NAV.tab]}
+            aria-label="Mi perfil"
+            className="tap mr-1 flex min-h-11 min-w-11 items-center justify-center rounded-full"
+          >
+            {avatar}
+          </Link>
+        )}
+      </div>
+
+      {hasMenu && (
+        <Sheet
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          title={session?.name ?? "Mi cuenta"}
+          subtitle={isStaffSession ? roleLabel : session?.identifier}
+        >
+          <nav className="flex flex-col gap-3 pb-2" aria-label="Menú de cuenta">
+            <ul className="overflow-hidden rounded-2xl bg-surface-low">
+              {links.map(({ href, label, icon: Icon }) => (
+                <li key={href} className="border-b border-surface-high last:border-0">
+                  <Link
+                    href={href}
+                    transitionTypes={[...NAV.forward]}
+                    onClick={() => setMenuOpen(false)}
+                    className="row font-medium hover:bg-surface-container"
+                  >
+                    <Icon size={19} className="text-primary" aria-hidden />
+                    <span className="flex-1">{label}</span>
+                    <ChevronRight size={17} className="text-secondary" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {isStaffSession && session && (
+              <a
+                href={whatsappLink(
+                  SUPPORT_WHATSAPP,
+                  `Hola, soy ${session.name}${session.shop ? ` de ${session.shop.name}` : ""}. Necesito ayuda con BarberApp.`,
+                )}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMenuOpen(false)}
+                className="row rounded-2xl bg-mint font-semibold text-mint-ink"
+              >
+                <MessageCircle size={19} aria-hidden />
+                <span className="flex-1">
+                  Soporte por WhatsApp
+                  <span className="block text-xs font-medium">Escribinos ante cualquier duda</span>
+                </span>
+                <ExternalLink size={16} aria-hidden />
+              </a>
+            )}
+            <button
+              type="button"
+              className="tap btn-destructive"
+              onClick={async () => {
+                setMenuOpen(false);
+                await logout();
+                router.replace("/auth/login");
+              }}
+            >
+              <LogOut size={17} /> Cerrar sesión
+            </button>
+          </nav>
+        </Sheet>
+      )}
     </header>
   );
 }
+
+/** Pestañas que tienen sentido en cualquier barbería: al cambiar de local, el cliente se queda ahí. */
+const SHOP_AGNOSTIC_PATHS = ["/cliente/mis-turnos", "/cliente/perfil", "/cliente/historial", "/cliente/tienda"];
 
 /**
  * Barbería activa del cliente. Si se atiende en varias, desde acá pasa de una a otra:
  * cada una tiene sus turnos, su tienda y su seña.
  */
+
 function ShopSwitcher() {
   const router = useRouter();
+  const pathname = usePathname();
   const shop = useAppStore((s) => s.session?.shop);
   const shops = useAppStore((s) => s.session?.shops ?? []);
   const membership = useAppStore((s) => s.membership);
@@ -212,7 +255,9 @@ function ShopSwitcher() {
     setBusy(null);
     if (!result.ok) return toast(result.error, "error");
     setOpen(false);
-    router.replace("/cliente/reservar");
+    toast(`Ahora estás en ${shops.find((s) => s.id === id)?.name ?? "otra barbería"}`, "success");
+    // Un turno o un pago son de la barbería anterior: ahí sí se vuelve a reservar.
+    if (!SHOP_AGNOSTIC_PATHS.includes(pathname)) router.replace("/cliente/reservar");
   };
 
   return (
@@ -221,9 +266,11 @@ function ShopSwitcher() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label={`Barbería activa: ${shop.name}`}
-        className="tap chip min-h-10 max-w-[40%] bg-surface-lowest text-primary shadow-xs"
+        className="tap inline-flex min-h-11 min-w-0 max-w-[42%] items-center gap-1.5 rounded-full bg-surface-lowest px-3 text-xs font-semibold text-primary shadow-xs lg:max-w-60 lg:text-sm"
       >
-        <Store size={13} aria-hidden /> <span className="truncate">{shop.name}</span>
+        <Store size={14} className="shrink-0" aria-hidden />
+        <span className="min-w-0 truncate">{shop.name}</span>
+        <ChevronDown size={14} className="shrink-0 text-secondary" aria-hidden />
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} title="Tus barberías" subtitle="Elegí en cuál querés reservar">
         <div className="flex flex-col gap-3 pb-2">

@@ -38,6 +38,9 @@ const env = {
   MP_CLIENT_ID: "e2e-client-id",
   MP_CLIENT_SECRET: "e2e-client-secret",
   MP_WEBHOOK_SECRET: "e2e-webhook-secret",
+  // La suscripción de BarberApp se cobra con la cuenta de la plataforma: en los tests, ninguna.
+  MP_PLATFORM_ACCESS_TOKEN: "",
+  SUPERADMIN_IDENTIFIERS: "",
 };
 const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
 

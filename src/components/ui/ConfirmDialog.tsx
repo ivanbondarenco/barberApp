@@ -2,10 +2,11 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { ease, spring } from "@/lib/motion";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -17,6 +18,8 @@ interface ConfirmDialogProps {
   confirmLabel: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** Texto del botón mientras se ejecuta la acción ("Cancelando…"). */
+  busyLabel?: string;
 }
 
 /** Diálogo centrado para acciones poco frecuentes o irreversibles. */
@@ -29,17 +32,32 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel = "Volver",
   destructive,
+  busyLabel = "Un momento…",
 }: ConfirmDialogProps) {
   const titleId = useId();
+  const descId = useId();
   const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => setMounted(true), []);
+  useFocusTrap(dialogRef, open);
 
   useEffect(() => {
     if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    // El foco arranca en la opción segura: un Enter apurado no confirma una baja.
+    const raf = requestAnimationFrame(() => cancelRef.current?.focus({ preventScroll: true }));
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+      previous?.focus?.({ preventScroll: true });
+    };
   }, [open, onClose]);
 
   if (!mounted) return null;
@@ -57,9 +75,11 @@ export function ConfirmDialog({
             aria-hidden
           />
           <m.div
+            ref={dialogRef}
             role="alertdialog"
             aria-modal="true"
             aria-labelledby={titleId}
+            aria-describedby={descId}
             initial={{ opacity: 0, scale: 0.92, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0, transition: spring.pop }}
             exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15, ease: ease.exit } }}
@@ -68,9 +88,9 @@ export function ConfirmDialog({
             <h2 id={titleId} className="text-lg font-bold tracking-tight">
               {title}
             </h2>
-            <div className="mt-1.5 text-sm leading-relaxed text-secondary">{description}</div>
+            <div id={descId} className="mt-1.5 text-sm leading-relaxed text-secondary">{description}</div>
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <button type="button" disabled={busy} onClick={onClose} className="tap btn-secondary">
+              <button ref={cancelRef} type="button" disabled={busy} onClick={onClose} className="tap btn-secondary">
                 {cancelLabel}
               </button>
               <button
@@ -87,7 +107,7 @@ export function ConfirmDialog({
                 }}
                 className={cn("tap", destructive ? "btn-destructive-solid" : "btn-primary")}
               >
-                {busy ? "…" : confirmLabel}
+                {busy ? busyLabel : confirmLabel}
               </button>
             </div>
           </m.div>

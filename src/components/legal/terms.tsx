@@ -34,8 +34,8 @@ const SECTIONS: LegalSection[] = [
     body: (
       <>
         <p>
-          Terminada la prueba, el servicio se abona por mes y por adelantado. El precio mensual equivale al valor de 2
-          cortes de pelo según la lista de precios de la barbería al momento de abonar.
+          Terminada la prueba, el servicio se abona por mes y por adelantado. El precio mensual es de $25.000 (pesos
+          argentinos).
         </p>
         <p>Se puede pagar por transferencia, Mercado Pago o en efectivo.</p>
         <p>
