@@ -28,6 +28,9 @@ services:
       CACHE_LOCAL_ENABLED: "true"
       CONFIG_SESSION_PHONE_CLIENT: BarberApp
       CONFIG_SESSION_PHONE_NAME: Chrome
+      # Versión de WhatsApp Web con la que se presenta. Si WhatsApp dice "no se pueden vincular
+      # dispositivos", actualizarla desde github.com/wppconnect-team/wa-version (versions.json).
+      CONFIG_SESSION_PHONE_VERSION: 2.3000.1054172749
       LOG_LEVEL: ERROR,WARN
     volumes:
       - whatsapp-instances:/evolution/instances

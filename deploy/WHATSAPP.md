@@ -112,6 +112,11 @@ CACHE_LOCAL_ENABLED=true
 CONFIG_SESSION_PHONE_CLIENT=BarberApp
 CONFIG_SESSION_PHONE_NAME=Chrome
 
+# Versión de WhatsApp Web con la que se presenta. Si al escanear el QR el celular dice
+# "no se pueden vincular dispositivos en este momento" (pero web.whatsapp.com sí vincula),
+# poné la última de github.com/wppconnect-team/wa-version (versions.json, sin "-alpha").
+CONFIG_SESSION_PHONE_VERSION=2.3000.1054172749
+
 LOG_LEVEL=ERROR,WARN
 ```
 

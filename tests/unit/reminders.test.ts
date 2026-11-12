@@ -111,29 +111,44 @@ describe("cola de recordatorios", () => {
       whatsappReminderText(pendingReminders([appointment(overrides)], clients)[0], info, "Nicolás Paz");
 
     it("dice que es mañana, la hora, el local, el barbero y lo que ya pagó", () => {
-      const text = textFor({});
-      expect(text).toContain("Hola Tomás!");
-      expect(text).toContain("mañana");
-      expect(text).toContain("a las 08:00 hs en D.S Studio con Nicolás");
-      expect(text).toContain("Ya abonaste $4.750 de seña: te quedan $4.750 para pagar en el local.");
-      expect(text).toContain("Av. Siempreviva 742");
-      expect(text).toContain("Mensaje automático de BarberApp");
+      expect(textFor({})).toBe(
+        [
+          "💈 *Recordatorio de turno*",
+          "",
+          "Hola *Tomás*! 👋",
+          "Te esperamos *mañana* en *D.S Studio*.",
+          "",
+          "📅 *Martes 15 Septiembre*",
+          "🕐 *08:00 hs*",
+          "✂️ Corte a tijera",
+          "💇‍♂️ Con *Nicolás*",
+          "📍 Av. Siempreviva 742",
+          "",
+          "💰 *Pago*",
+          "✅ Seña abonada: *$4.750*",
+          "💵 Saldo a pagar en el local: *$4.750*",
+          "",
+          "❌ ¿No podés venir? Cancelalo desde la app así liberamos el horario.",
+          "",
+          "_Mensaje automático de BarberApp. Este número no lee respuestas._",
+        ].join("\n"),
+      );
     });
 
     it("avisa la seña pendiente con el monto", () => {
       const text = textFor({ deposit: { amount: 4750, status: "pendiente", method: "efectivo" } });
-      expect(text).toContain("Te queda pendiente la seña de $4.750");
-      expect(text).toContain("Total del turno: $9.500");
+      expect(text).toContain("⏳ Seña pendiente: *$4.750*");
+      expect(text).toContain("💵 Total del turno: *$9.500*");
     });
 
     it("sin seña, dice cuánto paga en el local", () => {
       expect(textFor({ deposit: { amount: 0, status: "pendiente", method: "efectivo" } })).toContain(
-        "Total a pagar en el local: $9.500.",
+        "💵 Total a pagar en el local: *$9.500*",
       );
     });
 
     it("un turno de hoy dice hoy", () => {
-      expect(textFor({ date: "2026-09-14", time: "18:00" })).toContain("Te recordamos que hoy");
+      expect(textFor({ date: "2026-09-14", time: "18:00" })).toContain("Te esperamos *hoy* en");
     });
   });
 });

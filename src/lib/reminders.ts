@@ -65,34 +65,42 @@ export function reminderMessage(reminder: PendingReminder, info: Pick<BusinessIn
   return lines.filter(Boolean).join("\n");
 }
 
-/** "mañana martes 15 septiembre", "hoy martes 15 septiembre" o solo la fecha si falta más. */
-function dayLabel(date: string, now: Date): string {
+/** "mañana", "hoy" o nada si falta más (el día igual va en su renglón). */
+function dayWord(date: string, now: Date): string {
   const today = toISODate(now);
-  if (date === today) return `hoy ${longDate(date)}`;
-  if (date === addDays(today, 1)) return `mañana ${longDate(date)}`;
-  return `el ${longDate(date)}`;
+  if (date === today) return "hoy";
+  if (date === addDays(today, 1)) return "mañana";
+  return "";
 }
 
 /** Cómo quedó la plata del turno: cuánto pagó de seña y cuánto le falta. */
-function paymentLine(a: Appointment): string {
+function paymentLines(a: Appointment): string[] {
   const t = appointmentTotals(a);
   if (a.deposit.status === "abonada" && t.depositPaid > 0) {
     return t.dueAtChair > 0
-      ? `Ya abonaste ${money(t.depositPaid)} de seña: te quedan ${money(t.dueAtChair)} para pagar en el local.`
-      : `Ya abonaste ${money(t.depositPaid)}: no te queda nada por pagar.`;
+      ? [`✅ Seña abonada: *${money(t.depositPaid)}*`, `💵 Saldo a pagar en el local: *${money(t.dueAtChair)}*`]
+      : [`✅ Pagaste *${money(t.depositPaid)}*: no te queda nada por pagar`];
   }
   if (a.deposit.status === "en_revision") {
-    return `Estamos revisando tu transferencia de ${money(t.deposit)} de seña. El resto (${money(t.dueAtChair - t.deposit)}) lo pagás en el local.`;
+    return [
+      `🔎 Seña en revisión: *${money(t.deposit)}*`,
+      `💵 Saldo a pagar en el local: *${money(t.dueAtChair - t.deposit)}*`,
+    ];
   }
   if (t.deposit > 0) {
-    return `Te queda pendiente la seña de ${money(t.deposit)}: podés abonarla desde la app o al llegar. Total del turno: ${money(t.grandTotal)}.`;
+    return [
+      `⏳ Seña pendiente: *${money(t.deposit)}*`,
+      "_Podés abonarla desde la app o al llegar._",
+      `💵 Total del turno: *${money(t.grandTotal)}*`,
+    ];
   }
-  return `Total a pagar en el local: ${money(t.dueAtChair)}.`;
+  return [`💵 Total a pagar en el local: *${money(t.dueAtChair)}*`];
 }
 
 /**
  * Recordatorio automático por WhatsApp. Sale de un número único de BarberApp, así que dice
- * de qué local es y aclara que es automático (nadie lee las respuestas).
+ * de qué local es y aclara que es automático (nadie lee las respuestas). Usa el formato de
+ * WhatsApp: *negrita* y _cursiva_.
  */
 export function whatsappReminderText(
   reminder: PendingReminder,
@@ -102,14 +110,20 @@ export function whatsappReminderText(
 ): string {
   const a = reminder.appointment;
   const firstName = a.clientName.split(" ")[0];
-  const withBarber = barberName ? ` con ${barberName.split(" ")[0]}` : "";
-  const lines = [
-    `Hola ${firstName}! Te recordamos que ${dayLabel(a.date, now)} tenés turno a las ${a.time} hs en ${info.name}${withBarber} (${a.serviceName}).`,
-    paymentLine(a),
-    info.address ? `📍 ${info.address}` : "",
-    "Si no podés venir, cancelalo desde la app así liberamos el horario.",
-    "",
-    "_Mensaje automático de BarberApp. Este número no lee respuestas._",
+  const when = dayWord(a.date, now);
+  const sections = [
+    ["💈 *Recordatorio de turno*"],
+    [`Hola *${firstName}*! 👋`, `Te esperamos ${when ? `*${when}* ` : ""}en *${info.name}*.`],
+    [
+      `📅 *${longDate(a.date)}*`,
+      `🕐 *${a.time} hs*`,
+      `✂️ ${a.serviceName}`,
+      barberName ? `💇‍♂️ Con *${barberName.split(" ")[0]}*` : "",
+      info.address ? `📍 ${info.address}` : "",
+    ],
+    ["💰 *Pago*", ...paymentLines(a)],
+    ["❌ ¿No podés venir? Cancelalo desde la app así liberamos el horario."],
+    ["_Mensaje automático de BarberApp. Este número no lee respuestas._"],
   ];
-  return lines.filter((l, i) => l || i === lines.length - 2).join("\n");
+  return sections.map((lines) => lines.filter(Boolean).join("\n")).join("\n\n");
 }
