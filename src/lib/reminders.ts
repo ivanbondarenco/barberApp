@@ -97,6 +97,9 @@ function paymentLines(a: Appointment): string[] {
   return [`💵 Total a pagar en el local: *${money(t.dueAtChair)}*`];
 }
 
+/** Nombre del perfil de WhatsApp del número que manda los avisos (el que conviene agendar). */
+export const WHATSAPP_SENDER_NAME = "Mi Barberia";
+
 /**
  * Recordatorio automático por WhatsApp. Sale de un número único de BarberApp, así que dice
  * de qué local es y aclara que es automático (nadie lee las respuestas). Usa el formato de
@@ -106,7 +109,7 @@ export function whatsappReminderText(
   reminder: PendingReminder,
   info: Pick<BusinessInfo, "name" | "address">,
   barberName: string | undefined,
-  now = new Date(),
+  { link, now = new Date() }: { link?: string; now?: Date } = {},
 ): string {
   const a = reminder.appointment;
   const firstName = a.clientName.split(" ")[0];
@@ -123,7 +126,13 @@ export function whatsappReminderText(
     ],
     ["💰 *Pago*", ...paymentLines(a)],
     ["❌ ¿No podés venir? Cancelalo desde la app así liberamos el horario."],
-    ["_Mensaje automático de BarberApp. Este número no lee respuestas._"],
+    // Quien no tiene el número agendado ve solo el número: agendarlo es lo que muestra el nombre.
+    [`📲 Agendanos como *${WHATSAPP_SENDER_NAME}* para reconocer tus avisos.`],
+    [`_Mensaje automático de ${WHATSAPP_SENDER_NAME}. Este número no lee respuestas._`],
+    [link ? `🌐 ${link}` : ""],
   ];
-  return sections.map((lines) => lines.filter(Boolean).join("\n")).join("\n\n");
+  return sections
+    .map((lines) => lines.filter(Boolean).join("\n"))
+    .filter(Boolean)
+    .join("\n\n");
 }

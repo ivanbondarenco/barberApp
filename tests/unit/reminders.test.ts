@@ -108,7 +108,9 @@ describe("cola de recordatorios", () => {
   describe("recordatorio automático por WhatsApp", () => {
     const info = { name: "D.S Studio", address: "Av. Siempreviva 742" };
     const textFor = (overrides: Partial<Appointment>) =>
-      whatsappReminderText(pendingReminders([appointment(overrides)], clients)[0], info, "Nicolás Paz");
+      whatsappReminderText(pendingReminders([appointment(overrides)], clients)[0], info, "Nicolás Paz", {
+        link: "https://mibarberia.live",
+      });
 
     it("dice que es mañana, la hora, el local, el barbero y lo que ya pagó", () => {
       expect(textFor({})).toBe(
@@ -130,7 +132,11 @@ describe("cola de recordatorios", () => {
           "",
           "❌ ¿No podés venir? Cancelalo desde la app así liberamos el horario.",
           "",
-          "_Mensaje automático de BarberApp. Este número no lee respuestas._",
+          "📲 Agendanos como *Mi Barberia* para reconocer tus avisos.",
+          "",
+          "_Mensaje automático de Mi Barberia. Este número no lee respuestas._",
+          "",
+          "🌐 https://mibarberia.live",
         ].join("\n"),
       );
     });

@@ -1,5 +1,6 @@
 import "server-only";
 import { pendingReminders, whatsappReminderText, type PendingReminder } from "@/lib/reminders";
+import { appUrl } from "./mail";
 import { reportError } from "./monitor";
 import { executeCommand, listShops, loadState } from "./repository";
 import { evolutionConfig, sendWhatsappText } from "./wa-notify";
@@ -56,7 +57,7 @@ export async function runReminderSweep(now = new Date()): Promise<number> {
       for (const reminder of due) {
         const a = reminder.appointment;
         const barber = state.barbers.find((b) => b.id === a.barberId);
-        const text = whatsappReminderText(reminder, state.businessInfo, barber?.name, now);
+        const text = whatsappReminderText(reminder, state.businessInfo, barber?.name, { link: appUrl(), now });
         if (!(await sendWhatsappText(a.clientPhone, text))) continue;
         try {
           await executeCommand({ role: "sistema", shopId: shop.id }, { type: "appointment.reminderSent", id: a.id });
