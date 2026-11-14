@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, CreditCard, MessageCircle, Scissors, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CreditCard, Scissors, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { NAV } from "@/components/motion/Page";
@@ -9,19 +9,7 @@ import { whatsappLink } from "@/lib/format";
 import type { SetupTask } from "@/lib/notifications";
 import { SUPPORT_WHATSAPP } from "@/lib/plan";
 
-const ICONS = { mercadopago: CreditCard, whatsapp: MessageCircle, servicios: Scissors } as const;
-
-/**
- * WhatsApp Cloud API es configuración de desarrollador (tokens de Meta, plantillas aprobadas):
- * la barbería funciona sin eso. Se ofrece como opcional, nunca como advertencia.
- */
-const OPTIONAL: SetupTask["id"][] = ["whatsapp"];
-const isOptional = (t: SetupTask) => OPTIONAL.includes(t.id);
-
-/** Pasos pendientes que sí hacen falta para trabajar (lo opcional no cuenta). */
-export function requiredSetupTasks(tasks: SetupTask[]): SetupTask[] {
-  return tasks.filter((t) => !isOptional(t));
-}
+const ICONS = { mercadopago: CreditCard, servicios: Scissors } as const;
 
 const DISMISS_KEY = "barberapp:setup-banner";
 
@@ -65,8 +53,7 @@ export function SetupChecklist({
   dismissible?: boolean;
   className?: string;
 }) {
-  const required = requiredSetupTasks(tasks);
-  const optional = tasks.filter(isOptional);
+  const required = tasks;
   const signature = required.map((t) => t.id).join(",");
   const [expanded, setExpanded] = useState(false);
   // Arranca descartado hasta leer el almacenamiento: así no parpadea un aviso que el dueño ya cerró.
@@ -120,24 +107,14 @@ export function SetupChecklist({
 
   if (!tasks.length) return null;
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
-      {required.length > 0 && (
-        <section aria-label="Configuración pendiente" className="flex flex-col gap-3 rounded-2xl bg-amber-container p-4 text-amber-ink">
-          <p className="flex items-start gap-2 text-sm font-semibold">
-            <TriangleAlert size={18} className="mt-0.5 shrink-0" aria-hidden />
-            {summaryOf(required)}
-          </p>
-          <TaskList tasks={required} onNavigate={onNavigate} />
-          <SupportLine shopName={shopName} />
-        </section>
-      )}
-      {optional.length > 0 && (
-        <section aria-label="Opcional" className="flex flex-col gap-2">
-          <p className="px-1 text-xs font-semibold text-secondary">Opcional · avanzado</p>
-          <TaskList tasks={optional} onNavigate={onNavigate} muted />
-        </section>
-      )}
-    </div>
+    <section aria-label="Configuración pendiente" className={cn("flex flex-col gap-3 rounded-2xl bg-amber-container p-4 text-amber-ink", className)}>
+      <p className="flex items-start gap-2 text-sm font-semibold">
+        <TriangleAlert size={18} className="mt-0.5 shrink-0" aria-hidden />
+        {summaryOf(tasks)}
+      </p>
+      <TaskList tasks={tasks} onNavigate={onNavigate} />
+      <SupportLine shopName={shopName} />
+    </section>
   );
 }
 
@@ -146,20 +123,18 @@ function summaryOf(required: SetupTask[]): string {
   return "Tenés pendiente conectar Mercado Pago.";
 }
 
-function TaskList({ tasks, onNavigate, muted }: { tasks: SetupTask[]; onNavigate?: () => void; muted?: boolean }) {
+function TaskList({ tasks, onNavigate }: { tasks: SetupTask[]; onNavigate?: () => void }) {
   return (
-    <ul className={cn("overflow-hidden rounded-xl text-ink", muted ? "bg-surface-low" : "bg-surface-lowest")}>
+    <ul className="overflow-hidden rounded-xl bg-surface-lowest text-ink">
       {tasks.map((task) => {
         const Icon = ICONS[task.id];
         return (
           <li key={task.id} className="border-b border-surface-high last:border-0">
             <Link href={task.href} transitionTypes={[...NAV.forward]} onClick={onNavigate} className="row hover:bg-surface-low">
-              <Icon size={18} className={cn("shrink-0", muted ? "text-secondary" : "text-primary")} aria-hidden />
+              <Icon size={18} className="shrink-0 text-primary" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold">{task.title}</span>
-                <span className="block text-xs text-secondary">
-                  {isOptional(task) ? "Requiere una cuenta de desarrollador de Meta. La app funciona sin esto." : task.body}
-                </span>
+                <span className="block text-xs text-secondary">{task.body}</span>
               </span>
               <ChevronRight size={17} className="text-secondary" aria-hidden />
             </Link>

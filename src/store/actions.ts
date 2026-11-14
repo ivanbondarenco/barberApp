@@ -209,19 +209,6 @@ export async function disconnectMercadopago(): Promise<Result> {
   }
 }
 
-/** Credenciales de WhatsApp del local. */
-export async function saveWhatsappCredentials(input: {
-  accessToken?: string;
-  phoneNumberId?: string;
-  template?: string;
-  language?: string;
-}): Promise<Result> {
-  const result = await post("/api/settings/whatsapp", input);
-  if (!result.ok) toast(result.error, "error");
-  else toast("WhatsApp actualizado", "success");
-  return result;
-}
-
 export const resetDemo = () => runWithFeedback({ type: "demo.reset" }, "Datos demo restablecidos");
 
 export { uid };

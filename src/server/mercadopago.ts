@@ -125,6 +125,8 @@ export async function connectAccount(
       code: opts.code,
       redirect_uri: opts.redirectUri,
       code_verifier: opts.verifier,
+      // Credenciales productivas (con "true" Mercado Pago devuelve credenciales de prueba).
+      test_token: "false",
     });
   } catch (error) {
     await reportError("mercadopago.oauth", error, {

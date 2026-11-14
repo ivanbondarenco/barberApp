@@ -242,23 +242,12 @@ test.describe.serial("configuración de Mercado Pago", () => {
     expect(status).toMatchObject({ connected: false, available: true, canReceiveWebhooks: true });
   });
 
-  test("cargar WhatsApp habilita los códigos y no devuelve el token entero", async ({ page }) => {
+  test("WhatsApp no se configura desde la barbería: lo maneja BarberApp", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/admin/configuracion");
     await page.getByRole("tab", { name: "Conexiones" }).click();
-    await expect(page.getByText("WhatsApp sin configurar")).toBeVisible();
-
-    await page.getByLabel("Access token de WhatsApp").fill("EAAG-token-de-whatsapp-1234");
-    await page.getByLabel("Phone number ID").fill("558899001122");
-    await page.getByRole("button", { name: "Guardar WhatsApp" }).click();
-    await expect(page.getByText("WhatsApp conectado")).toBeVisible();
-
-    const status = await (await page.request.get("/api/settings/whatsapp")).json();
-    expect(status.ready).toBe(true);
-    expect(status.accessToken).toBe("••••1234");
-    expect(JSON.stringify(status)).not.toContain("EAAG-token-de-whatsapp");
-    // El id del número no es secreto: se muestra entero para poder verificarlo.
-    expect(status.phoneNumberId).toBe("558899001122");
+    await expect(page.getByText("Cobro online sin conectar")).toBeVisible();
+    await expect(page.getByLabel("Access token de WhatsApp")).toHaveCount(0);
   });
 
   test("las credenciales solo las ve el dueño", async ({ page }) => {

@@ -114,7 +114,7 @@ describe("OAuth", () => {
 
     const sent = JSON.parse(String(calls[0].init?.body));
     expect(calls[0].url).toBe("https://api.mercadopago.com/oauth/token");
-    expect(sent).toMatchObject({ grant_type: "authorization_code", code: "TG-code", code_verifier: "el-verifier", client_id: "6048" });
+    expect(sent).toMatchObject({ grant_type: "authorization_code", code: "TG-code", code_verifier: "el-verifier", client_id: "6048", test_token: "false" });
 
     const { getSecret } = await import("@/server/secrets");
     const { loadState } = await import("@/server/repository");

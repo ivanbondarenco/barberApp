@@ -9,7 +9,6 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { BookingRulesPanel } from "@/components/admin/BookingRulesPanel";
 import { DepositRulesPanel } from "@/components/admin/DepositRulesPanel";
-import { IntegrationGuideButton } from "@/components/admin/IntegrationGuide";
 import { ShopLinkCard } from "@/components/admin/ShopLinkCard";
 import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
 import { SetupChecklist } from "@/components/layout/SetupChecklist";
@@ -24,7 +23,7 @@ import { setupTasks } from "@/lib/notifications";
 import { dayRanges, MAX_RANGES_PER_DAY, normalizeRanges } from "@/lib/schedule";
 import type { DayHours, TimeRange } from "@/lib/types";
 import { ease } from "@/lib/motion";
-import { disconnectMercadopago, saveWhatsappCredentials, updateBusinessInfo, updateHours } from "@/store/actions";
+import { disconnectMercadopago, updateBusinessInfo, updateHours } from "@/store/actions";
 import { useAppStore } from "@/store/useAppStore";
 import { toast, undoToast } from "@/store/useToast";
 
@@ -133,13 +132,7 @@ export default function ConfiguracionPage() {
           {tab === "horarios" && <HoursEditor />}
           {tab === "reservas" && <BookingRulesPanel />}
           {tab === "senas" && <DepositRulesPanel />}
-          {tab === "integraciones" && (
-            <>
-              <PaymentsPanel />
-              <hr className="border-surface-high" />
-              <WhatsappPanel />
-            </>
-          )}
+          {tab === "integraciones" && <PaymentsPanel />}
           {tab === "cuenta" && <AccountPanel />}
         </m.div>
       </AnimatePresence>
@@ -503,122 +496,6 @@ function AccountPanel() {
         <p className="text-[13px] text-secondary">{session?.identifier}</p>
       </div>
       <ChangePasswordForm recoverHref="/auth/recuperar?tipo=barbero" />
-    </div>
-  );
-}
-
-interface WhatsappStatus {
-  accessToken: string;
-  phoneNumberId: string;
-  template: string;
-  language: string;
-  ready: boolean;
-}
-
-/**
- * Credenciales de WhatsApp Cloud API del local. Con esto la app manda el código para
- * recuperar la contraseña.
- */
-function WhatsappPanel() {
-  const ready = useAppStore((s) => s.integrations.whatsappReady);
-  const [status, setStatus] = useState<WhatsappStatus | null>(null);
-  const [values, setValues] = useState({ accessToken: "", phoneNumberId: "", template: "", language: "" });
-  const [saving, setSaving] = useState(false);
-
-  const load = async () => {
-    const res = await fetch("/api/settings/whatsapp", { credentials: "same-origin", cache: "no-store" });
-    if (res.ok) setStatus((await res.json()) as WhatsappStatus);
-  };
-
-  useEffect(() => {
-    void load().catch(() => undefined);
-  }, []);
-
-  const save = async () => {
-    // Solo se manda lo que el dueño escribió: lo vacío deja la credencial como está.
-    const patch = Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim())) as Record<string, string>;
-    if (!Object.keys(patch).length) return;
-    setSaving(true);
-    const result = await saveWhatsappCredentials(patch);
-    setSaving(false);
-    if (!result.ok) return;
-    setValues({ accessToken: "", phoneNumberId: "", template: "", language: "" });
-    await load();
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-caps text-secondary">WhatsApp · avanzado (opcional)</h2>
-        <IntegrationGuideButton guide="whatsapp" />
-      </div>
-      {/* Es configuración de desarrollador (WhatsApp Cloud API de Meta): se presenta como opcional, no como falta. */}
-      <div className={cn("rounded-2xl p-4", ready ? "bg-mint" : "bg-surface-low")}>
-        <p className={cn("text-[15px] font-semibold", ready && "text-mint-ink")}>
-          {ready ? "WhatsApp conectado" : "WhatsApp sin configurar"}
-        </p>
-        <p className={cn("mt-1 text-[13px]", ready ? "text-mint-ink" : "text-secondary")}>
-          {ready
-            ? "Los códigos de verificación salen desde tu número."
-            : "Opcional. Con una cuenta de WhatsApp Cloud API de Meta, los códigos para recuperar la contraseña salen desde tu número. Si no la tenés, escribinos y te ayudamos."}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <Field label="Access token de WhatsApp" htmlFor="wa-token">
-          <input
-            id="wa-token"
-            type="password"
-            autoComplete="off"
-            className="field font-mono"
-            placeholder={status?.accessToken || "Token permanente de tu app de Meta"}
-            value={values.accessToken}
-            onChange={(e) => setValues((v) => ({ ...v, accessToken: e.target.value }))}
-          />
-        </Field>
-        <Field label="Phone number ID" htmlFor="wa-phone">
-          <input
-            id="wa-phone"
-            inputMode="numeric"
-            autoComplete="off"
-            className="field font-mono"
-            placeholder={status?.phoneNumberId || "Id del número en WhatsApp Cloud API"}
-            value={values.phoneNumberId}
-            onChange={(e) => setValues((v) => ({ ...v, phoneNumberId: e.target.value }))}
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Plantilla" htmlFor="wa-template">
-            <input
-              id="wa-template"
-              autoComplete="off"
-              className="field"
-              placeholder={status?.template ?? ""}
-              value={values.template}
-              onChange={(e) => setValues((v) => ({ ...v, template: e.target.value }))}
-            />
-          </Field>
-          <Field label="Idioma" htmlFor="wa-language">
-            <input
-              id="wa-language"
-              autoComplete="off"
-              className="field"
-              placeholder={status?.language ?? ""}
-              value={values.language}
-              onChange={(e) => setValues((v) => ({ ...v, language: e.target.value }))}
-            />
-          </Field>
-        </div>
-      </div>
-
-      <p className="text-[13px] text-secondary">
-        La plantilla tiene que estar aprobada por Meta como plantilla de autenticación, con el código como único
-        parámetro. Meta no permite mandar texto libre para esto.
-      </p>
-
-      <button type="button" disabled={saving} onClick={() => void save()} className="tap btn-primary">
-        {saving ? "Guardando…" : "Guardar WhatsApp"}
-      </button>
     </div>
   );
 }

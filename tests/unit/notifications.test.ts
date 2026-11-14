@@ -54,9 +54,9 @@ describe("actividad del panel", () => {
 });
 
 describe("configuración pendiente", () => {
-  it("le pide al dueño conectar Mercado Pago y WhatsApp; al barbero, nada", () => {
+  it("le pide al dueño conectar Mercado Pago (WhatsApp no); al barbero, nada", () => {
     const state = { services: seedState().services, integrations: { mercadopagoReady: false, whatsappReady: false } };
-    expect(setupTasks(state, "admin").map((t) => t.id)).toEqual(["mercadopago", "whatsapp"]);
+    expect(setupTasks(state, "admin").map((t) => t.id)).toEqual(["mercadopago"]);
     expect(setupTasks(state, "barbero")).toEqual([]);
     expect(setupTasks({ ...state, integrations: { mercadopagoReady: true, whatsappReady: true } }, "admin")).toEqual([]);
   });
